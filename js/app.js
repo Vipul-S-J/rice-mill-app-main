@@ -205,29 +205,41 @@ async function toggleExpenseInputs() {
 
 function getUnitLabel(type = "") {
     type = type.toLowerCase();
+    if (type.includes("diesel")) return "Ltr";
+    if (type.includes("rice bag") || type.includes("empty bag")) return "Pcs";
     if (type.includes("white") || type.includes("red")) return "Q";
     if (type.includes("husk")) return "KG";
-    if (type.includes("diesel")) return "Ltr";
     if (type.includes("salt")) return "Bag";
-    if (type.includes("empty bag")) return "Nos";
     return "KG";
 }
 
 async function loadDropdowns() {
     const action = document.getElementById('st_action').value;
     const stockSelect = document.getElementById('st_type');
+    const bagWeightField = document.getElementById('st_bag_weight');
     if (!stockSelect) return;
     
     stockSelect.innerHTML = ""; 
+
+    // Hide weight per bag for Purchase, Sale (rice), and Misc - only show when needed
+    if (bagWeightField) {
+        bagWeightField.style.display = (action === "Purchase" || action === "Sale" || action === "PaddySale" || action === "Misc") ? "none" : "";
+    }
 
     try {
         const allSettings = await db.settings.toArray();
 
         if (action === "Purchase") {
-            const paddyItems = allSettings.filter(item => item.category === "paddy");
+            const paddyItems = allSettings.filter(item => item.category === "paddy")
+                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name));
             if (paddyItems.length === 0) {
                 stockSelect.add(new Option("⚠️ No Paddy Varieties Found", ""));
             }
+            // Add Big/Small paddy options first
+            stockSelect.add(new Option("🌾 Big Paddy (New)", "Big Paddy (New)"));
+            stockSelect.add(new Option("🌾 Big Paddy (Old)", "Big Paddy (Old)"));
+            stockSelect.add(new Option("🌾 Small Paddy (New)", "Small Paddy (New)"));
+            stockSelect.add(new Option("🌾 Small Paddy (Old)", "Small Paddy (Old)"));
             paddyItems.forEach(item => {
                 const itemName = item.fullName || item.name;
                 stockSelect.add(new Option(`🌾 ${itemName} (New)`, `${itemName} (New)`));
@@ -235,7 +247,8 @@ async function loadDropdowns() {
             });
 
         } else if (action === "Sale") {
-            const riceItems = allSettings.filter(item => item.category === "rice");
+            const riceItems = allSettings.filter(item => item.category === "rice")
+                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name));
             if (riceItems.length === 0) {
                 stockSelect.add(new Option("⚠️ No Rice Varieties Found", ""));
             }
@@ -244,8 +257,25 @@ async function loadDropdowns() {
                 stockSelect.add(new Option(`🍚 ${itemName}`, itemName));
             });
 
+        } else if (action === "PaddySale") {
+            const paddyItems = allSettings.filter(item => item.category === "paddy")
+                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name));
+            if (paddyItems.length === 0) {
+                stockSelect.add(new Option("⚠️ No Paddy Varieties Found", ""));
+            }
+            stockSelect.add(new Option("🌾 Big Paddy (New)", "Big Paddy (New)"));
+            stockSelect.add(new Option("🌾 Big Paddy (Old)", "Big Paddy (Old)"));
+            stockSelect.add(new Option("🌾 Small Paddy (New)", "Small Paddy (New)"));
+            stockSelect.add(new Option("🌾 Small Paddy (Old)", "Small Paddy (Old)"));
+            paddyItems.forEach(item => {
+                const itemName = item.fullName || item.name;
+                stockSelect.add(new Option(`🌾 ${itemName} (New)`, `${itemName} (New)`));
+                stockSelect.add(new Option(`🌾 ${itemName} (Old)`, `${itemName} (Old)`));
+            });
+
         } else if (action === "Misc") {
-            const miscItems = allSettings.filter(item => item.category === "misc");
+            const miscItems = allSettings.filter(item => item.category === "misc")
+                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name));
             if (miscItems.length === 0) {
                 stockSelect.add(new Option("📦 Husk Waste", "Husk Waste"));
                 stockSelect.add(new Option("📦 Broken Rice", "Broken Rice"));
@@ -475,9 +505,12 @@ async function saveHulling() {
 
 async function saveStock() {
     const itemType = document.getElementById('st_type').value;
+    const actionVal = document.getElementById('st_action').value;
+    // Map PaddySale to Sale action for storage
+    const storedAction = actionVal === "PaddySale" ? "Sale" : actionVal;
     await db.stock.add({
         name: document.getElementById('st_name').value.trim(),
-        action: document.getElementById('st_action').value,
+        action: storedAction,
         type: itemType,
         weight: parseFloat(document.getElementById('st_weight').value) || 0,
         bags: parseFloat(document.getElementById('st_bags').value) || 0,
