@@ -230,20 +230,17 @@ async function loadDropdowns() {
         const allSettings = await db.settings.toArray();
 
         if (action === "Purchase") {
-            const paddyItems = allSettings.filter(item => item.category === "paddy")
-                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name));
-            if (paddyItems.length === 0) {
+            const paddyNames = allSettings.filter(item => item.category === "paddy").map(item => item.fullName || item.name);
+            // Add Big/Small paddy as default entries
+            if (!paddyNames.includes("Big Paddy")) paddyNames.push("Big Paddy");
+            if (!paddyNames.includes("Small Paddy")) paddyNames.push("Small Paddy");
+            paddyNames.sort((a, b) => a.localeCompare(b));
+            if (paddyNames.length === 0) {
                 stockSelect.add(new Option("⚠️ No Paddy Varieties Found", ""));
             }
-            // Add Big/Small paddy options first
-            stockSelect.add(new Option("🌾 Big Paddy (New)", "Big Paddy (New)"));
-            stockSelect.add(new Option("🌾 Big Paddy (Old)", "Big Paddy (Old)"));
-            stockSelect.add(new Option("🌾 Small Paddy (New)", "Small Paddy (New)"));
-            stockSelect.add(new Option("🌾 Small Paddy (Old)", "Small Paddy (Old)"));
-            paddyItems.forEach(item => {
-                const itemName = item.fullName || item.name;
-                stockSelect.add(new Option(`🌾 ${itemName} (New)`, `${itemName} (New)`));
-                stockSelect.add(new Option(`🌾 ${itemName} (Old)`, `${itemName} (Old)`));
+            paddyNames.forEach(name => {
+                stockSelect.add(new Option(`🌾 ${name} (New)`, `${name} (New)`));
+                stockSelect.add(new Option(`🌾 ${name} (Old)`, `${name} (Old)`));
             });
 
         } else if (action === "Sale") {
@@ -258,19 +255,16 @@ async function loadDropdowns() {
             });
 
         } else if (action === "PaddySale") {
-            const paddyItems = allSettings.filter(item => item.category === "paddy")
-                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name));
-            if (paddyItems.length === 0) {
+            const paddyNames = allSettings.filter(item => item.category === "paddy").map(item => item.fullName || item.name);
+            if (!paddyNames.includes("Big Paddy")) paddyNames.push("Big Paddy");
+            if (!paddyNames.includes("Small Paddy")) paddyNames.push("Small Paddy");
+            paddyNames.sort((a, b) => a.localeCompare(b));
+            if (paddyNames.length === 0) {
                 stockSelect.add(new Option("⚠️ No Paddy Varieties Found", ""));
             }
-            stockSelect.add(new Option("🌾 Big Paddy (New)", "Big Paddy (New)"));
-            stockSelect.add(new Option("🌾 Big Paddy (Old)", "Big Paddy (Old)"));
-            stockSelect.add(new Option("🌾 Small Paddy (New)", "Small Paddy (New)"));
-            stockSelect.add(new Option("🌾 Small Paddy (Old)", "Small Paddy (Old)"));
-            paddyItems.forEach(item => {
-                const itemName = item.fullName || item.name;
-                stockSelect.add(new Option(`🌾 ${itemName} (New)`, `${itemName} (New)`));
-                stockSelect.add(new Option(`🌾 ${itemName} (Old)`, `${itemName} (Old)`));
+            paddyNames.forEach(name => {
+                stockSelect.add(new Option(`🌾 ${name} (New)`, `${name} (New)`));
+                stockSelect.add(new Option(`🌾 ${name} (Old)`, `${name} (Old)`));
             });
 
         } else if (action === "Misc") {
