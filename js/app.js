@@ -234,7 +234,7 @@ async function loadDropdowns() {
             // Add Big/Small paddy as default entries
             if (!paddyNames.includes("Big Paddy")) paddyNames.push("Big Paddy");
             if (!paddyNames.includes("Small Paddy")) paddyNames.push("Small Paddy");
-            paddyNames.sort((a, b) => a.localeCompare(b));
+            paddyNames.sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'}));
             if (paddyNames.length === 0) {
                 stockSelect.add(new Option("⚠️ No Paddy Varieties Found", ""));
             }
@@ -245,7 +245,7 @@ async function loadDropdowns() {
 
         } else if (action === "Sale") {
             const riceItems = allSettings.filter(item => item.category === "rice")
-                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name));
+                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name, undefined, {sensitivity: 'base'}));
             if (riceItems.length === 0) {
                 stockSelect.add(new Option("⚠️ No Rice Varieties Found", ""));
             }
@@ -258,7 +258,7 @@ async function loadDropdowns() {
             const paddyNames = allSettings.filter(item => item.category === "paddy").map(item => item.fullName || item.name);
             if (!paddyNames.includes("Big Paddy")) paddyNames.push("Big Paddy");
             if (!paddyNames.includes("Small Paddy")) paddyNames.push("Small Paddy");
-            paddyNames.sort((a, b) => a.localeCompare(b));
+            paddyNames.sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'}));
             if (paddyNames.length === 0) {
                 stockSelect.add(new Option("⚠️ No Paddy Varieties Found", ""));
             }
@@ -269,7 +269,7 @@ async function loadDropdowns() {
 
         } else if (action === "Misc") {
             const miscItems = allSettings.filter(item => item.category === "misc")
-                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name));
+                .sort((a, b) => (a.fullName || a.name).localeCompare(b.fullName || b.name, undefined, {sensitivity: 'base'}));
             if (miscItems.length === 0) {
                 stockSelect.add(new Option("📦 Husk Waste", "Husk Waste"));
                 stockSelect.add(new Option("📦 Broken Rice", "Broken Rice"));
