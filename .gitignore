@@ -1,0 +1,6 @@
+
+# Dependencies and generated build files
+node_modules/
+dist/
+android/.gradle/
+android/**/build/

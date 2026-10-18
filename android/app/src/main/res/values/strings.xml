@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Rice Mill</string>
+    <string name="title_activity_main">Rice Mill</string>
+    <string name="package_name">com.vipulsj.ricemill</string>
+    <string name="custom_url_scheme">com.vipulsj.ricemill</string>
+</resources>
