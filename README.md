@@ -1,1 +1,0 @@
-# rice-mill-app
