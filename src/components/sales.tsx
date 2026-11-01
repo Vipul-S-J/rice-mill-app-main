@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useDB } from '../context';
 import {
   calcGST, fmtDate, fmtINR, fmtQtlKg, inRange, paymentStatus,
-  round2, sumPayments, today, uid, withDraftPayment,
+  round2, sumPayments, today, uid, withDraftPayment, varietiesOf,
 } from '../db';
 import type { Payment, SaleEntry, SaleLine } from '../types';
 import type { DateFilterValue } from './ui';
@@ -90,7 +90,7 @@ export function SalesPage() {
     </Card>
     <SaleForm open={showForm} initial={editing} onClose={() => { setShowForm(false); setEditing(null); }} onSave={data => { editing ? updateSale(editing.id, data) : addSale(data); toast(editing ? 'Sale updated' : 'Sale saved'); setShowForm(false); setEditing(null); }} />
     {view && <SaleInvoice db={db} sale={db.sales.find(s => s.id === view.id) || view} onClose={() => setView(null)} />}
-    {pay && <AddPaymentModal open total={pay.finalTotal} paid={sumPayments(pay.payments)} modes={modes} onClose={() => setPay(null)} onSave={(p: Omit<Payment, 'id' | 'createdAt'>) => { addSalePayment(pay.id, p); setPay(null); toast('Payment added'); }} />}
+    {pay && <AddPaymentModal open total={pay.finalTotal} defaultDate={pay.date} paid={sumPayments(pay.payments)} modes={modes} onClose={() => setPay(null)} onSave={(p: Omit<Payment, 'id' | 'createdAt'>) => { addSalePayment(pay.id, p); setPay(null); toast('Payment added'); }} />}
     <Confirm open={!!del} onClose={() => setDel(null)} onConfirm={() => { if (del) deleteSale(del); toast('Sale deleted — stock and accounts reversed'); }} message="Delete this sale? Stock, cashbook and party ledger effects are reversed." />
   </div>;
 }
@@ -103,8 +103,8 @@ function SaleForm({ open, initial, onClose, onSave }: { open: boolean; initial: 
   const products = db.categories.filter(c => c.type === 'product' && c.active);
   const firstProduct = products.find(p => CORE.includes(p.id))?.id || products[0]?.id || 'pr_paddy';
 
-  const paddyVarsAll = db.varieties.filter(v => v.active && (v.usage || ['paddy', 'rice']).includes('paddy'));
-  const riceVars = db.varieties.filter(v => v.active && (v.usage || ['paddy', 'rice']).includes('rice'));
+  const paddyVarsAll = varietiesOf(db, 'paddy');
+  const riceVars = varietiesOf(db, 'rice');
 
   const blankPaddy = (): PaddyLineState => ({ id: uid(), varietyId: '', size: '', qtyKg: 0, rate: '' });
   const blankRice = (): RiceLineState => ({ id: uid(), varietyId: riceVars[0]?.id || '', bags25: '0', bags10: '0', looseKg: '0', rate: '', rateUnit: 'kg' });
@@ -124,6 +124,7 @@ function SaleForm({ open, initial, onClose, onSave }: { open: boolean; initial: 
   const [payAmt, setPayAmt] = useState('');
   const [payMode, setPayMode] = useState('Cash');
   const [payDate, setPayDate] = useState(today());
+  React.useEffect(() => { setPayDate(date); }, [date]); // payment date follows the entry date
   const [photo, setPhoto] = useState<string | undefined>();
   const [notes, setNotes] = useState('');
   const [vehicle, setVehicle] = useState('');
@@ -209,7 +210,7 @@ function SaleForm({ open, initial, onClose, onSave }: { open: boolean; initial: 
     setGstMode(s?.gstMode || 'none');
     setGstRate(String(s?.gstRate ?? db.settings.defaultGstRate ?? 0));
     setPayments(s?.payments || []);
-    setPayAmt(''); setPayMode(modes[0] || 'Cash'); setPayDate(today());
+    setPayAmt(''); setPayMode(modes[0] || 'Cash'); setPayDate(s?.date || today());
     setPhoto(s?.billPhoto); setNotes(s?.notes || ''); setVehicle(s?.vehicleNumber || '');
   }, [open, initial?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 

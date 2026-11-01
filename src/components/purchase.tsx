@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useDB } from '../context';
 import {
   fmtINR, fmtQtlKg, fmtNumber, fmtDate, today, calcGST, round2, sumPayments, paymentStatus, inRange,
-  withDraftPayment, uid, now, bagSummary, sizeForVariety,
+  withDraftPayment, uid, now, bagSummary, sizeForVariety, varietiesOf,
 } from '../db';
 import type { PurchaseEntry, PurchaseLine, BagMovement, Payment, PaddySize, BagGivenType } from '../types';
 import {
@@ -12,6 +12,7 @@ import {
 import type { DateFilterValue } from './ui';
 import {
   PartyInput, TaxSummary, useEnsureParty, usePaymentModes, partyName, varietyName, statusBadge, AddPaymentModal,
+  PartyPhoneInput, phoneForName,
 } from './pages';
 import { useRoundedTotal } from './amount';
 import { PurchaseVoucherModal } from './purchaseVoucher';
@@ -22,7 +23,9 @@ type PurchaseSave = Omit<PurchaseEntry, 'id' | 'createdAt' | 'updatedAt' | 'vouc
 // ============================================================
 // PAGE
 // ============================================================
-export function PurchasePage() {
+export type PurchasePrefill = { customer: string; phone: string; date: string };
+
+export function PurchasePage({ prefill, onPrefillUsed }: { prefill?: PurchasePrefill | null; onPrefillUsed?: () => void } = {}) {
   const { db, addPurchase, updatePurchase, deletePurchase, addPurchasePayment, addPurchaseBagReturn } = useDB();
   const modeOptions = usePaymentModes();
   const [sizeTab, setSizeTab] = useState<'all' | 'small' | 'big'>('all');
@@ -41,6 +44,12 @@ export function PurchasePage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmBulkDel, setConfirmBulkDel] = useState(false);
+  const [formPrefill, setFormPrefill] = useState<PurchasePrefill | null>(null);
+  // opened from the Hulling page's Paddy button: new purchase with the customer, phone and date already filled in
+  React.useEffect(() => {
+    if (!prefill) return;
+    setEditing(null); setFormPrefill(prefill); setShowForm(true); onPrefillUsed?.();
+  }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const entries = useMemo(() => {
     let list = [...db.purchases];
@@ -95,7 +104,7 @@ export function PurchasePage() {
         <SearchBar value={search} onChange={setSearch} placeholder="Customer, voucher, vehicle, variety…" />
         <div className="flex gap-2">
           <Select wrapperClassName="flex-1" value={varietyFilter} onChange={e => setVarietyFilter(e.target.value)}
-            options={[{ value: 'all', label: 'All varieties' }, ...db.varieties.filter(v => v.active).map(v => ({ value: v.id, label: v.name }))]} />
+            options={[{ value: 'all', label: 'All varieties' }, ...varietiesOf(db, 'paddy').map(v => ({ value: v.id, label: v.name }))]} />
           <Select wrapperClassName="flex-1" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
             options={[{ value: 'all', label: 'All Status' }, { value: 'paid', label: 'Paid' }, { value: 'partial', label: 'Partial' }, { value: 'unpaid', label: 'Unpaid' }, { value: 'bags', label: 'Bags pending' }]} />
         </div>
@@ -201,12 +210,12 @@ export function PurchasePage() {
       </Card>
 
       <PurchaseForm
-        open={showForm} initial={editing}
-        onClose={() => { setShowForm(false); setEditing(null); }}
+        open={showForm} initial={editing} prefill={formPrefill}
+        onClose={() => { setShowForm(false); setEditing(null); setFormPrefill(null); }}
         onSave={(data) => {
           if (editing) { updatePurchase(editing.id, data); toast('Purchase updated'); }
           else { addPurchase(data); toast('Purchase saved'); }
-          setShowForm(false); setEditing(null);
+          setShowForm(false); setEditing(null); setFormPrefill(null);
         }}
       />
       <BulkPurchaseModal open={showBulk} onClose={() => setShowBulk(false)} />
@@ -218,7 +227,7 @@ export function PurchasePage() {
         message={`Delete ${selected.length} selected purchases? Stock, bags and ledger effects of each are reversed.`} confirmText="Delete all selected" />
       {viewEntry && <PurchaseVoucherModal db={db} entry={viewEntry} onClose={() => setViewId(null)} />}
       {payEntry && (
-        <AddPaymentModal open total={payEntry.finalTotal} paid={sumPayments(payEntry.payments)} modes={modeOptions}
+        <AddPaymentModal open total={payEntry.finalTotal} defaultDate={payEntry.date} paid={sumPayments(payEntry.payments)} modes={modeOptions}
           onClose={() => setPayEntry(null)}
           onSave={(p: Omit<Payment, 'id' | 'createdAt'>) => { addPurchasePayment(payEntry.id, p); setPayEntry(null); toast('Payment added'); }} />
       )}
@@ -235,8 +244,8 @@ export function PurchasePage() {
 // ============================================================
 interface LineState { id: string; varietyId: string; size: PaddySize; bags: string; qtyKg: number; rate: string }
 
-function PurchaseForm({ open, initial, onClose, onSave }: {
-  open: boolean; initial: PurchaseEntry | null; onClose: () => void; onSave: (d: PurchaseSave) => void;
+function PurchaseForm({ open, initial, prefill, onClose, onSave }: {
+  open: boolean; initial: PurchaseEntry | null; prefill?: PurchasePrefill | null; onClose: () => void; onSave: (d: PurchaseSave) => void;
 }) {
   const { db, stock } = useDB();
   const modeOptions = usePaymentModes();
@@ -245,7 +254,7 @@ function PurchaseForm({ open, initial, onClose, onSave }: {
   // Guards the sync effect for the first commit after opening, so the values loaded
   // by the reset effect below always win (no auto-fill stomping an edited entry).
   const formReady = useRef(false);
-  const activeVarieties = db.varieties.filter(v => v.active && (v.usage || ['paddy', 'rice']).includes('paddy'));
+  const activeVarieties = varietiesOf(db, 'paddy');
 
   const blankLine = (): LineState => {
     const v = activeVarieties[0];
@@ -255,6 +264,7 @@ function PurchaseForm({ open, initial, onClose, onSave }: {
   const [date, setDate] = useState(today());
   const [vehicle, setVehicle] = useState('');
   const [customer, setCustomer] = useState('');
+  const [phone, setPhone] = useState('');
   const [lines, setLines] = useState<LineState[]>([]);
   const [gstMode, setGstMode] = useState<'none' | 'exclusive' | 'inclusive'>('none');
   const [gstRate, setGstRate] = useState('0');
@@ -300,6 +310,7 @@ function PurchaseForm({ open, initial, onClose, onSave }: {
   // pending = bags brought in − bags sent back (+ authorised adjustment). Fully sent back → 0.
   const pendingBags = totalBags - givenTotal + (Number(adjQty) || 0);
 
+  React.useEffect(() => { setPayDate(date); }, [date]); // payment date follows the entry date
   // ---- reset when opened ----
   React.useEffect(() => {
     if (!open) return;
@@ -307,9 +318,10 @@ function PurchaseForm({ open, initial, onClose, onSave }: {
     formReady.current = false;
     const i = initial;
     const b = i?.bagMovements[0];
-    setDate(i?.date || today());
+    setDate(i?.date || prefill?.date || today());
     setVehicle(i?.vehicleNumber || '');
-    setCustomer(i?.partyId ? partyName(db, i.partyId) : '');
+    setCustomer(i?.partyId ? partyName(db, i.partyId) : prefill?.customer || '');
+    setPhone(i?.partyId ? db.parties.find(p => p.id === i.partyId)?.phone || '' : prefill?.phone || '');
     setLines(i ? i.lines.map(l => ({ id: l.id, varietyId: l.varietyId, size: l.size, bags: l.bags ? String(l.bags) : '', qtyKg: l.qtyKg, rate: String(l.ratePerQtl) })) : [blankLine()]);
     setGstMode(i?.gstMode || 'none');
     setGstRate(String(i?.gstRate ?? db.settings.defaultGstRate ?? 0));
@@ -328,7 +340,7 @@ function PurchaseForm({ open, initial, onClose, onSave }: {
     setAdjQty(String(b?.manualAdjustment || 0));
     setAdjReason(b?.manualAdjustmentReason || '');
     setExisting(i?.payments || []);
-    setPayAmt(''); setPayMode(modeOptions[0] || 'Cash'); setPayDate(today());
+    setPayAmt(''); setPayMode(modeOptions[0] || 'Cash'); setPayDate(i?.date || prefill?.date || today());
     setPhoto(i?.billPhoto);
     setNotes(i?.notes || '');
     rt.reset(i ? { final: i.finalTotal, roundAdj: i.roundAdjustment, original: i.roundOriginal, manual: !!i.manualOverrides?.finalTotal } : undefined);
@@ -398,7 +410,7 @@ function PurchaseForm({ open, initial, onClose, onSave }: {
     if (sumPayments(payments) > rt.final + 0.01) { toast('Amount paid is more than the total payable', 'error'); return; }
 
     saving.current = true;
-    const pid = ensureParty(customer, 'supplier');
+    const pid = ensureParty(customer, 'supplier', phone);
     const purchaseLines: PurchaseLine[] = used.map(l => ({
       id: l.id, varietyId: l.varietyId, size: l.size, bags: Number(l.bags) || 0,
       qtyKg: l.qtyKg, ratePerQtl: Number(l.rate) || 0, amount: lineAmt(l),
@@ -446,7 +458,8 @@ function PurchaseForm({ open, initial, onClose, onSave }: {
             <Input type="date" label="Date *" value={date} onChange={e => setDate(e.target.value)} />
             <Input label="Vehicle No" value={vehicle} onChange={e => setVehicle(e.target.value.toUpperCase())} placeholder="KA 01 AH 1234" />
           </div>
-          <PartyInput label="Customer Name" required value={customer} onChange={setCustomer} placeholder="Type name — saved automatically" />
+          <PartyInput label="Customer Name" required value={customer} onChange={v => { setCustomer(v); const ph = phoneForName(db, v); if (ph) setPhone(ph); }} placeholder="Type name — saved automatically" />
+          <PartyPhoneInput value={phone} onChange={setPhone} name={customer} />
 
           {/* Variety lines */}
           <div className="flex items-center justify-between gap-2">

@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useDB } from '../context';
-import { fmtINR, fmtQtlKg, today, round2, withDraftPayment, uid, sizeForVariety, now } from '../db';
+import { fmtINR, fmtQtlKg, today, round2, withDraftPayment, uid, sizeForVariety, now, varietiesOf } from '../db';
 import type { PaddySize, BagGivenType, PurchaseEntry, PurchaseLine, BagMovement } from '../types';
 import { Button, Input, Select, Modal, Chips, toast } from './ui';
 import { PartyInput, usePaymentModes, partyName, varietyName } from './pages';
@@ -64,7 +64,7 @@ export function BulkPurchaseModal({ open, onClose }: { open: boolean; onClose: (
   const { db, stock, addPurchaseBatch } = useDB();
   const modeOptions = usePaymentModes();
   const saving = useRef(false);
-  const activeVarieties = db.varieties.filter(v => v.active && (v.usage || ['paddy', 'rice']).includes('paddy'));
+  const activeVarieties = varietiesOf(db, 'paddy');
 
   const newLine = (): BLine => {
     const v = activeVarieties[0];

@@ -12,7 +12,7 @@ const monthLabel = (ym: string) => {
 };
 
 /** Everything the Vehicle section shows is derived from dispatches, so it can never go out of sync. */
-function tripOf(d: DispatchEntry) {
+export function tripOf(d: DispatchEntry) {
   const p = d.paddy, h = d.husk;
   const loadKg = p ? p.grossLoadKg : d.netKg;
   const freight = d.transportCost;                                   // paddy: gross load x rate | husk: transport charges

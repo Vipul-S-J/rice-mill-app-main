@@ -13,14 +13,12 @@ export function purchaseVoucherHtml(db: Database, p: PurchaseEntry): string {
   const paid = sumPayments(p.payments);
   const pending = round2(p.finalTotal - paid);
   const bag = bagSummary(p.bagMovements);
-  const m0 = p.bagMovements[0];
   const paddyValue = round2(p.lines.reduce((a, l) => a + l.amount, 0));
   const hasGst = p.gstMode && p.gstMode !== 'none' && (p.totalTax || 0) > 0;
   const hasWb = (p.grossKg || 0) > 0;
 
   const lineRows = p.lines.map((l, i) => `
     <tr><td>${i + 1}</td><td>${esc(vName(l.varietyId))}</td><td>${SIZE_LABEL[l.size] || ''}</td>
-    <td class="r">${l.bags || '-'}</td>
     <td class="r">${esc(fmtQtlKg(l.qtyKg))}<br><span class="muted">${fmtNumber(l.qtyKg, 2)} kg · ${fmtNumber(l.qtyKg / 100, 3)} Qtl</span></td>
     <td class="r">${fmtINR(l.ratePerQtl)}</td><td class="r b">${fmtINR(l.amount)}</td></tr>`).join('');
 
@@ -40,25 +38,6 @@ export function purchaseVoucherHtml(db: Database, p: PurchaseEntry): string {
     <table><tr><th>Date</th><th>Mode</th><th>Ref</th><th class="r">Amount</th></tr>
     ${p.payments.map(x => `<tr><td>${fmtDate(x.date)}</td><td>${esc(x.mode)}</td><td>${esc(x.reference || '-')}</td><td class="r">${fmtINR(x.amount)}</td></tr>`).join('')}</table>` : '';
 
-  const bagHistory = p.bagMovements.length > 1 ? `
-    <table><tr><th>Date</th><th>Entry</th><th class="r">Returned (New/Old)</th><th class="r">Adjust</th></tr>
-    ${p.bagMovements.slice(1).map(m => `<tr><td>${fmtDate(m.date)}</td><td>${esc(m.manualAdjustmentReason || m.notes || 'Bag return')}</td>
-    <td class="r">${m.newBagsReturned || 0} / ${(m.oldBagsReturned || 0) + (m.bagsReturned || 0)}</td><td class="r">${m.manualAdjustment || 0}</td></tr>`).join('')}</table>` : '';
-
-  const bagSection = (bag.issued > 0 || bag.received > 0 || bag.returned > 0 || bag.adjustment !== 0) ? `
-    <div class="h">Bags</div>
-    <table>
-      <tr><td>Bags received (with paddy)</td><td class="r">${bag.received}</td></tr>
-      <tr><td>New bags sent back</td><td class="r">${bag.newIssued}</td></tr>
-      <tr><td>Old bags sent back</td><td class="r">${bag.oldIssued}</td></tr>
-      ${bag.returned > 0 ? `<tr><td>Bags sent back later (New ${bag.newReturned} / Old ${bag.oldReturned})</td><td class="r">${bag.returned}</td></tr>` : ''}
-      ${m0?.bagUnitCost ? `<tr><td>Cost per new bag</td><td class="r">${fmtINR(m0.bagUnitCost)}</td></tr>` : ''}
-      ${bag.charge > 0 ? `<tr><td>New bag charge (deducted from payable)</td><td class="r">${fmtINR(bag.charge)}</td></tr>` : ''}
-      ${bag.loss > 0 ? `<tr><td>New bags sent back free (cost to mill)</td><td class="r">${fmtINR(bag.loss)}</td></tr>` : ''}
-      ${bag.adjustment !== 0 ? `<tr><td>Manual adjustment${m0?.manualAdjustmentReason ? ' (' + esc(m0.manualAdjustmentReason) + ')' : ''}</td><td class="r">${bag.adjustment}</td></tr>` : ''}
-      <tr class="tot"><td>Pending bags (still with mill)</td><td class="r ${bag.pending > 0 ? 'red' : 'g'}">${bag.pending}</td></tr>
-    </table>${bagHistory}` : '';
-
   return `<div class="vch"><style>${VOUCHER_CSS}</style>
   <div class="c"><h1>${esc(s.millName)}</h1>
     <div class="muted">${esc(s.address)}</div>
@@ -72,8 +51,8 @@ export function purchaseVoucherHtml(db: Database, p: PurchaseEntry): string {
       ${party?.phone ? `<div class="muted">${esc(party.phone)}</div>` : ''}
       ${p.vehicleNumber ? `<div>Vehicle: ${esc(p.vehicleNumber)}</div>` : ''}</div>
   </div>
-  <table><tr><th>#</th><th>Variety</th><th>Size</th><th class="r">Bags</th><th class="r">Net Qty</th><th class="r">Rate/Qtl</th><th class="r">Amount</th></tr>${lineRows}
-    <tr><td colspan="4" class="b">Total net quantity</td><td class="r b">${esc(fmtQtlKg(p.netKg))}<br><span class="muted">${fmtNumber(p.netKg, 2)} kg · ${fmtNumber(p.netKg / 100, 3)} Qtl</span></td><td></td><td class="r b">${fmtINR(paddyValue)}</td></tr></table>
+  <table><tr><th>#</th><th>Variety</th><th>Size</th><th class="r">Net Qty</th><th class="r">Rate/Qtl</th><th class="r">Amount</th></tr>${lineRows}
+    <tr><td colspan="3" class="b">Total net quantity</td><td class="r b">${esc(fmtQtlKg(p.netKg))}<br><span class="muted">${fmtNumber(p.netKg, 2)} kg · ${fmtNumber(p.netKg / 100, 3)} Qtl</span></td><td></td><td class="r b">${fmtINR(paddyValue)}</td></tr></table>
   ${wbRows}
   <div class="h">Amount</div>
   <table>
@@ -83,14 +62,11 @@ export function purchaseVoucherHtml(db: Database, p: PurchaseEntry): string {
     <tr><td>SGST (${(p.gstRate || 0) / 2}%)</td><td class="r">${fmtINR(p.sgst || 0)}</td></tr>
     <tr><td>Total tax (${p.gstMode})</td><td class="r">${fmtINR(p.totalTax || 0)}</td></tr>` : ''}
     ${bag.charge > 0 ? `<tr><td>Less: new bag charge</td><td class="r red">- ${fmtINR(bag.charge)}</td></tr>` : ''}
-    <tr><td>Original total</td><td class="r">${fmtINR(p.roundOriginal)}</td></tr>
-    ${p.roundAdjustment !== 0 ? `<tr><td>Rounding adjustment</td><td class="r gold">${p.roundAdjustment > 0 ? '+' : '-'} ${fmtINR(Math.abs(p.roundAdjustment))}</td></tr>` : ''}
     <tr class="tot"><td>NET PAYABLE</td><td class="r">${fmtINR(p.finalTotal)}</td></tr>
     <tr><td>Paid</td><td class="r g b">${fmtINR(paid)}</td></tr>
     <tr><td>Balance pending</td><td class="r ${pending > 0.009 ? 'red' : 'g'} b">${fmtINR(Math.max(0, pending))}</td></tr>
   </table>
   ${payRows}
-  ${bagSection}
   ${p.notes ? `<div class="h">Notes</div><div>${esc(p.notes)}</div>` : ''}
   <div class="sig"><div>Authorised signatory</div><div>Customer / receiver signature</div></div>
   <div class="ft">${esc(s.receiptFooter)}</div></div>`;

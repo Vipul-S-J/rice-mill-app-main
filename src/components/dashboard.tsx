@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useDB } from '../context';
 import {
-  fmtINR, fmtQtlKg, fmtNumber, fmtDate, today, localISO, computePartyLedger, bagSummary,
+  fmtINR, fmtQtlKg, fmtNumber, fmtDate, today, localISO, computePartyLedger, bagSummary, varietiesOf,
 } from '../db';
 import type { Database, StockAdjustment } from '../types';
 import type { StockLedger } from '../db';
@@ -459,7 +459,7 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
             <h2 className="text-[15px] font-extrabold text-forest-900">🍚 Rice by Variety</h2>
             <div className="w-32">
               <Select value={riceFilter} onChange={e => setRiceFilter(e.target.value)}
-                options={[{ value: 'all', label: 'All' }, ...db.varieties.filter(v => v.active).map(v => ({ value: v.id, label: v.name }))]} />
+                options={[{ value: 'all', label: 'All' }, ...varietiesOf(db, 'rice').map(v => ({ value: v.id, label: v.name }))]} />
             </div>
           </div>
           {riceRows.length === 0 ? <div className="text-xs text-gray-400 text-center py-4">No rice stock yet — record a production batch.</div> : riceRows.map(([id, kg]) => (
@@ -585,7 +585,7 @@ function AdjustModal({ open, onClose }: { open: boolean; onClose: () => void }) 
   React.useEffect(() => {
     if (!open) return;
     saving.current = false;
-    setType('paddy'); setVarietyId(db.varieties.find(v => v.active)?.id || ''); setDir('add');
+    setType('paddy'); setVarietyId(varietiesOf(db, 'paddy')[0]?.id || ''); setDir('add');
     setKg(0); setBags(''); setCost(''); setReason(''); setDate(today());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -620,10 +620,10 @@ function AdjustModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       <><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save}>Save Adjustment</Button></>
     }>
       <div className="space-y-3">
-        <Select label="Item" value={type} onChange={e => setType(e.target.value as AdjType)} options={ADJ_ITEMS} />
+        <Select label="Item" value={type} onChange={e => { const t = e.target.value as AdjType; setType(t); if (t === 'paddy' || t === 'rice') setVarietyId(varietiesOf(db, t)[0]?.id || ''); }} options={ADJ_ITEMS} />
         {needsVariety && (
           <Select label="Variety" value={varietyId} onChange={e => setVarietyId(e.target.value)}
-            options={db.varieties.filter(v => v.active).map(v => ({ value: v.id, label: v.name }))} />
+            options={varietiesOf(db, type === 'rice' ? 'rice' : 'paddy').map(v => ({ value: v.id, label: v.name }))} />
         )}
         <Chips value={dir} onChange={v => setDir(v as any)} options={[{ value: 'add', label: '＋ Add stock' }, { value: 'remove', label: '− Remove stock' }]} />
         {isBag

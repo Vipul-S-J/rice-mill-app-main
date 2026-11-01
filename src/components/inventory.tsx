@@ -41,10 +41,7 @@ export function InventoryPage() {
       if (c) upsertCategory({ ...c, active: !c.active });
     } else {
       const v = db.varieties.find(x => x.id === confirm.id);
-      if (v && usage) {
-        const nextUsage = (v.usage || ['paddy', 'rice']).filter(x => x !== usage);
-        upsertVariety({ ...v, usage: nextUsage, active: nextUsage.length ? v.active : false });
-      }
+      if (v) upsertVariety({ ...v, active: !v.active });
     }
     toast('Inventory master updated'); setConfirm(null);
   };
@@ -107,7 +104,7 @@ export function InventoryPage() {
               <div className="flex gap-1 mt-0.5">{section === 'paddy' && <Badge tone={v.category === 'big' ? 'green' : v.category === 'small' ? 'gold' : 'gray'}>{v.category} paddy</Badge>}{section === 'rice' && <Badge tone="green">rice variety</Badge>}{!v.active && <Badge tone="red">Inactive</Badge>}</div>
             </div>
             <button onClick={() => { setEditingVar(v); setShowAdd(true); }} className="text-xs font-semibold text-blue-700">Edit</button>
-            <button onClick={() => setConfirm({ kind: 'variety', id: v.id, name: v.name })} className="text-xs font-semibold text-amber-700">Hide</button>
+            <button onClick={() => setConfirm({ kind: 'variety', id: v.id, name: v.name })} className={`text-xs font-semibold ${v.active ? 'text-amber-700' : 'text-green-700'}`}>{v.active ? 'Hide' : 'Show'}</button>
             <button onClick={() => askDelete('variety', v.id, v.name)} className="text-xs font-semibold text-red-600">Delete</button>
           </div>
         )) : categories.map(c => (
@@ -127,7 +124,7 @@ export function InventoryPage() {
         onCategory={(data) => { upsertCategory(data); setShowAdd(false); toast('Dropdown value saved'); }}
         onTrading={(data) => { upsertTradingItem(data); setShowAdd(false); toast('Trading item saved'); }} />
       <Confirm open={!!confirm} onClose={() => setConfirm(null)} onConfirm={deactivate}
-        title="Hide from dropdown" message={confirm?.kind === 'variety' ? `Hide “${confirm?.name}” from this dropdown? Saved records keep their value and it can be re-added later.` : `Change the active status of “${confirm?.name}”? Saved records are not changed.`}
+        title="Hide from dropdown" message={confirm?.kind === 'variety' ? `Change whether “${confirm?.name}” appears in this dropdown? Saved records keep their value. Paddy and rice lists are independent.` : `Change the active status of “${confirm?.name}”? Saved records are not changed.`}
         confirmText="Continue" />
       <Confirm open={!!del} onClose={() => setDel(null)} onConfirm={doDelete}
         title={del && del.used > 0 ? 'Cannot delete' : 'Delete permanently?'}
@@ -194,9 +191,10 @@ function MasterModal({ open, onClose, section, variety, category, tradingItem, o
       return;
     }
     if (usage) {
-      const same = db.varieties.find(v => v.name.toLowerCase() === n.toLowerCase() && v.id !== variety?.id);
-      if (same) onVariety({ ...same, usage: [...new Set([...(same.usage || ['paddy', 'rice']), usage])], active: true });
-      else onVariety({ id: variety?.id, name: n, category: usage === 'paddy' ? size : (variety?.category || 'other'), usage: variety ? variety.usage : [usage], active });
+      // paddy and rice lists are independent: a name only clashes with the same list
+      const same = db.varieties.find(v => v.name.toLowerCase() === n.toLowerCase() && v.id !== variety?.id && (v.usage || ['paddy', 'rice']).includes(usage));
+      if (same) { toast(`“${n}” is already in the ${usage} list`, 'error'); return; }
+      onVariety({ id: variety?.id, name: n, category: usage === 'paddy' ? size : 'other', usage: [usage], active });
     } else onCategory({ id: category?.id, name: n, type: catType, active });
   };
 

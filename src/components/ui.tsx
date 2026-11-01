@@ -769,14 +769,17 @@ export const PaymentForm: React.FC<{
   payments: { id?: string; date: string; amount: number; mode: string; reference?: string }[];
   onChange: (payments: { id?: string; date: string; amount: number; mode: string; reference?: string }[]) => void;
   modeOptions: string[];
-}> = ({ total, paid, payments, onChange, modeOptions }) => {
+  /** payment date follows the entry date when given */
+  defaultDate?: string;
+}> = ({ total, paid, payments, onChange, modeOptions, defaultDate }) => {
   const pending = Math.max(0, total - paid);
-  const [newPay, setNewPay] = useState({ date: today(), amount: pending, mode: modeOptions[0] || 'Cash', reference: '' });
+  const [newPay, setNewPay] = useState({ date: defaultDate || today(), amount: pending, mode: modeOptions[0] || 'Cash', reference: '' });
+  useEffect(() => { if (defaultDate) setNewPay(p => ({ ...p, date: defaultDate })); }, [defaultDate]);
 
   const addPayment = () => {
     if (newPay.amount <= 0) { toast('Enter valid amount', 'error'); return; }
     onChange([...payments, { ...newPay }]);
-    setNewPay({ date: today(), amount: Math.max(0, pending - newPay.amount), mode: modeOptions[0] || 'Cash', reference: '' });
+    setNewPay({ date: defaultDate || today(), amount: Math.max(0, pending - newPay.amount), mode: modeOptions[0] || 'Cash', reference: '' });
   };
   const removePayment = (idx: number) => {
     onChange(payments.filter((_, i) => i !== idx));

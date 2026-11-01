@@ -808,7 +808,7 @@ export function PaddyDispatchPage() {
 
       {viewEntry && <ReceiptModal entry={viewEntry} onClose={() => setViewEntry(null)} type="dispatch" />}
       {payEntry && (
-        <AddPaymentModal open total={dispatchDue(payEntry)} paid={sumPayments(payEntry.payments)} existingPayments={payEntry.payments} modes={modes}
+        <AddPaymentModal open total={dispatchDue(payEntry)} defaultDate={payEntry.date} paid={sumPayments(payEntry.payments)} existingPayments={payEntry.payments} modes={modes}
           onClose={() => setPayEntry(null)} onSave={pm => { addDispatchPayment(payEntry.id, pm); setPayEntry(null); toast('Payment added'); }} />
       )}
       <Confirm open={!!delEntry} onClose={() => setDelEntry(null)} title="Delete dispatch?"
