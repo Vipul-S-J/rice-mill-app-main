@@ -412,10 +412,15 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 const DEFAULT_VARIETIES: Variety[] = [
-  { id: 'var_kempakki', name: 'Kempakki (Malnad Red)', category: 'small', usage: ['paddy', 'rice'], active: true },
-  { id: 'var_jaya', name: 'Jaya', category: 'big', usage: ['paddy', 'rice'], active: true },
-  { id: 'var_sona', name: 'Sona Masuri', category: 'small', usage: ['paddy', 'rice'], active: true },
-  { id: 'var_other', name: 'Other', category: 'other', usage: ['paddy', 'rice'], active: true },
+  { id: 'var_kempakki', name: 'Kempakki (Malnad Red)', category: 'small', usage: ['paddy'], active: true },
+  { id: 'var_jaya', name: 'Jaya', category: 'big', usage: ['paddy'], active: true },
+  { id: 'var_sona', name: 'Sona Masuri', category: 'small', usage: ['paddy'], active: true },
+  { id: 'var_other', name: 'Other', category: 'other', usage: ['paddy'], active: true },
+  // rice varieties are a separate list (own ids) so editing one never touches the other
+  { id: 'var_kempakki__rice', name: 'Kempakki (Malnad Red)', category: 'other', usage: ['rice'], active: true },
+  { id: 'var_jaya__rice', name: 'Jaya', category: 'other', usage: ['rice'], active: true },
+  { id: 'var_sona__rice', name: 'Sona Masuri', category: 'other', usage: ['rice'], active: true },
+  { id: 'var_other__rice', name: 'Other', category: 'other', usage: ['rice'], active: true },
 ];
 
 const DEFAULT_CATEGORIES: Category[] = [
@@ -472,6 +477,12 @@ export function newDB(): Database {
   };
 }
 
+/** Active varieties for a dropdown, A to Z. Paddy and rice keep separate lists. */
+export function varietiesOf(db: Database, usage: 'paddy' | 'rice'): Variety[] {
+  return db.varieties
+    .filter(v => v.active && (v.usage || ['paddy', 'rice']).includes(usage))
+    .sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+}
 export function sizeForVariety(db: Database, varietyId: string): PaddySize {
   const v = db.varieties.find(x => x.id === varietyId);
   return v?.category === 'big' ? 'big' : 'small';
@@ -497,6 +508,25 @@ export function migrateDB(raw: any): Database {
     for (const x of missing) x.tripNumber = nextTripNo(db.dispatches);
   }
   db.varieties = db.varieties.map(v => ({ ...v, usage: v.usage?.length ? v.usage : ['paddy', 'rice'] }));
+  // Paddy and rice varieties are independent lists: split any variety older versions shared between
+  // the two, and point existing rice records (production output, rice sales, adjustments) at the rice copy.
+  {
+    const shared = db.varieties.filter(v => v.usage?.includes('paddy') && v.usage?.includes('rice'));
+    if (shared.length) {
+      const toRice = new Map<string, string>();
+      const riceCopies = shared.map(v => {
+        const rid = `${v.id}__rice`;
+        toRice.set(v.id, rid);
+        return { ...v, id: rid, category: 'other' as const, usage: ['rice' as const] };
+      });
+      db.varieties = [...db.varieties.map(v => (toRice.has(v.id) ? { ...v, usage: ['paddy' as const] } : v)), ...riceCopies];
+      const m = (id?: string) => (id && toRice.get(id)) || id;
+      db.production = db.production.map(p => (p.outputs ? { ...p, outputs: { ...p.outputs, riceVarietyId: m(p.outputs.riceVarietyId) as string } } : p));
+      db.sales = db.sales.map(x => (x.productId !== 'pr_rice' ? x : { ...x, varietyId: m(x.varietyId), lines: x.lines?.map(l => ({ ...l, varietyId: m(l.varietyId) })) }));
+      db.dispatches = db.dispatches.map(d => (d.productId === 'pr_rice' ? { ...d, varietyId: m(d.varietyId) } : d));
+      db.stockAdjustments = db.stockAdjustments.map(a => (a.itemType === 'rice' ? { ...a, varietyId: m(a.varietyId) } : a));
+    }
+  }
   if (!db.categories?.length) db.categories = base.categories;
   if (!('tradingItems' in (raw || {})) || !Array.isArray((db as any).tradingItems)) {
     db.tradingItems = base.tradingItems.map(t => ({ ...t, rateUnits: [...t.rateUnits] }));

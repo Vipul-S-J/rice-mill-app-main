@@ -12,7 +12,7 @@ import {
 import type { DateFilterValue } from './ui';
 import {
   PartyInput, TaxSummary, useEnsureParty, usePaymentModes, partyName, statusBadge,
-  AddPaymentModal, ReceiptModal,
+  AddPaymentModal, ReceiptModal, PartyPhoneInput, phoneForName,
 } from './pages';
 import { useRoundedTotal } from './amount';
 
@@ -21,7 +21,7 @@ type HullingSave = Omit<HullingEntry, 'id' | 'createdAt' | 'updatedAt' | 'receip
 // ============================================================
 // PAGE
 // ============================================================
-export function HullingPage() {
+export function HullingPage({ onPaddy }: { onPaddy?: (p: { customer: string; phone: string; date: string }) => void }) {
   const { db, addHulling, updateHulling, deleteHulling, addHullingPayment } = useDB();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('date-desc');
@@ -140,6 +140,7 @@ export function HullingPage() {
               <div className="flex gap-1.5 mt-2 flex-wrap">
                 <MiniBtn onClick={() => { setEditing(h); setShowForm(true); }} tone="blue">✎ Edit</MiniBtn>
                 <MiniBtn onClick={() => setViewEntry(h)}>🧾 Receipt</MiniBtn>
+                {onPaddy && <MiniBtn onClick={() => onPaddy({ customer: partyName(db, h.partyId), phone: db.parties.find(p => p.id === h.partyId)?.phone || '', date: h.date })} tone="gold">🌾 Paddy</MiniBtn>}
                 {due > 0.009 && <MiniBtn onClick={() => setPayEntry(h)} tone="green">＋ Pay</MiniBtn>}
                 <MiniBtn onClick={() => setDelId(h.id)} tone="danger">🗑</MiniBtn>
               </div>
@@ -171,7 +172,7 @@ export function HullingPage() {
         message="Delete this hulling entry? Its payments and ledger/cashbook effects are reversed." />
       {viewEntry && <ReceiptModal entry={db.hulling.find(h => h.id === viewEntry.id) || viewEntry} onClose={() => setViewEntry(null)} type="hulling" />}
       {payEntry && (
-        <AddPaymentModal open total={payEntry.finalTotal} paid={sumPayments(payEntry.payments)} modes={modeOptions}
+        <AddPaymentModal open total={payEntry.finalTotal} defaultDate={payEntry.date} paid={sumPayments(payEntry.payments)} modes={modeOptions}
           onClose={() => setPayEntry(null)}
           onSave={(p: Omit<Payment, 'id' | 'createdAt'>) => { addHullingPayment(payEntry.id, p); setPayEntry(null); toast('Payment added'); }} />
       )}
@@ -192,6 +193,7 @@ function HullingForm({ open, initial, onClose, onSave }: {
 
   const [date, setDate] = useState(today());
   const [customer, setCustomer] = useState('');
+  const [phone, setPhone] = useState('');
   const [vehicle, setVehicle] = useState('');
   const [bags, setBags] = useState('');
   const [qtyKg, setQtyKg] = useState(0);
@@ -206,6 +208,7 @@ function HullingForm({ open, initial, onClose, onSave }: {
   const [payMode, setPayMode] = useState('Cash');
   const [payDate, setPayDate] = useState(today());
 
+  React.useEffect(() => { setPayDate(date); }, [date]); // payment date follows the entry date
   const baseCalc = round2((qtyKg / 100) * (Number(rate) || 0));
   const base = baseOverride !== null ? Number(baseOverride) || 0 : baseCalc;
   const g = calcGST(base, gstMode, Number(gstRate) || 0);
@@ -217,6 +220,7 @@ function HullingForm({ open, initial, onClose, onSave }: {
     const i = initial;
     setDate(i?.date || today());
     setCustomer(i?.partyId ? partyName(db, i.partyId) : '');
+    setPhone(i?.partyId ? db.parties.find(p => p.id === i.partyId)?.phone || '' : '');
     setVehicle(i?.vehicleNumber || '');
     setBags(i?.bagsCount ? String(i.bagsCount) : '');
     setQtyKg(i?.quantityKg || 0);
@@ -229,7 +233,7 @@ function HullingForm({ open, initial, onClose, onSave }: {
     setExisting(i?.payments || []);
     setPayAmt('');
     setPayMode(modeOptions[0] || 'Cash');
-    setPayDate(today());
+    setPayDate(i?.date || today());
     rt.reset(i ? { final: i.finalTotal, roundAdj: i.roundAdjustment, original: i.roundOriginal, manual: !!i.manualOverrides?.finalTotal } : undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial?.id]);
@@ -245,7 +249,7 @@ function HullingForm({ open, initial, onClose, onSave }: {
     const payments = withDraftPayment(existing, payAmt, payMode, payDate);
     if (sumPayments(payments) > rt.final + 0.01) { toast('Amount paid is more than the total', 'error'); return; }
     saving.current = true;
-    const pid = ensureParty(customer, 'customer');
+    const pid = ensureParty(customer, 'customer', phone);
     onSave({
       date, partyId: pid, vehicleNumber: vehicle || undefined, bagsCount: Number(bags) || undefined,
       quantityKg: qtyKg, ratePerQtl: Number(rate) || 0,
@@ -269,7 +273,8 @@ function HullingForm({ open, initial, onClose, onSave }: {
           <Input type="date" label="Date *" value={date} onChange={e => setDate(e.target.value)} />
           <Input label="Vehicle No" value={vehicle} onChange={e => setVehicle(e.target.value.toUpperCase())} placeholder="KA 01 AH 1234" />
         </div>
-        <PartyInput label="Customer Name" required value={customer} onChange={setCustomer} types={['customer']} placeholder="Type name — saved automatically" />
+        <PartyInput label="Customer Name" required value={customer} onChange={v => { setCustomer(v); const ph = phoneForName(db, v); if (ph) setPhone(ph); }} types={['customer']} placeholder="Type name — saved automatically" />
+        <PartyPhoneInput value={phone} onChange={setPhone} name={customer} />
 
         <div className="grid grid-cols-[70px_1fr_88px] gap-2 items-start">
           <Input label="Bags" type="number" inputMode="numeric" value={bags} onChange={e => setBags(e.target.value)} placeholder="opt." />

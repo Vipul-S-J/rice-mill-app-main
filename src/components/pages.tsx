@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { cn } from '../utils/cn';
 import { printHtml, shareText } from '../utils/print';
+import { InventoryPage } from './inventory';
 import { useDB } from '../context';
 import {
   fmtINR, fmtQty, fmtQtlKg, fmtNumber, fmtDate, today, kgToQtl,
   calcGST, round2, sumPayments, paymentStatus, calcPendingBags, computePartyLedger, dispatchDue,
-  computeTradingStock, fmtTradeQty,
+  computeTradingStock, fmtTradeQty, varietiesOf,
   inRange
 } from '../db';
 import type {
@@ -83,21 +84,51 @@ export function PartyInput({ label = 'Party', value, onChange, types, placeholde
   );
 }
 
-// Resolve a typed name to a party (creates if missing). Returns '' for blank / unknown placeholders.
+/** digits only, so "98450 12345" and "9845012345" match */
+export const phoneDigits = (v?: string) => (v || '').replace(/\D/g, '');
+/** A phone number (7+ digits) uniquely identifies a customer. */
+export function findPartyByPhone(parties: Party[], phone?: string): Party | undefined {
+  const d = phoneDigits(phone);
+  return d.length >= 7 ? parties.find(p => p.active && phoneDigits(p.phone) === d) : undefined;
+}
+
+// Resolve a typed name (and optional phone) to a party (creates if missing).
+// A phone that already belongs to a customer wins over the typed name. Returns '' for blank / unknown placeholders.
 export function useEnsureParty() {
   const { db, upsertParty } = useDB();
-  return (name: string, type: PartyType): string => {
+  return (name: string, type: PartyType, phone?: string): string => {
     const trimmed = (name || '').trim();
     if (!trimmed || trimmed === '(Unknown)') return '';
-    const existing = db.parties.find(p => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+    const ph = (phone || '').trim();
+    const existing = findPartyByPhone(db.parties, ph) || db.parties.find(p => p.name.trim().toLowerCase() === trimmed.toLowerCase());
     if (existing) {
-      if (!existing.types.includes(type)) {
-        upsertParty({ id: existing.id, name: existing.name, types: [...existing.types, type] });
+      const addType = !existing.types.includes(type);
+      const addPhone = !!ph && !existing.phone;
+      if (addType || addPhone) {
+        upsertParty({ id: existing.id, name: existing.name, types: addType ? [...existing.types, type] : existing.types, ...(addPhone ? { phone: ph } : {}) });
       }
       return existing.id;
     }
-    return upsertParty({ name: trimmed, types: [type], active: true, openingBalance: 0 });
+    return upsertParty({ name: trimmed, types: [type], active: true, openingBalance: 0, ...(ph ? { phone: ph } : {}) });
   };
+}
+
+/** Optional phone field. The number identifies a customer uniquely across Hulling and Purchase. */
+export function PartyPhoneInput({ value, onChange, name }: { value: string; onChange: (v: string) => void; name: string }) {
+  const { db } = useDB();
+  const match = findPartyByPhone(db.parties, value);
+  const other = match && name.trim() && match.name.trim().toLowerCase() !== name.trim().toLowerCase() ? match : null;
+  return (
+    <div>
+      <Input label="Phone (optional)" type="tel" inputMode="tel" value={value} onChange={e => onChange(e.target.value)} placeholder="Identifies the customer uniquely" />
+      {other && <div className="text-[10px] text-amber-700 mt-1">This number belongs to “{other.name}” — that customer will be used.</div>}
+    </div>
+  );
+}
+/** phone saved for an existing customer with this exact name ('' if none) */
+export function phoneForName(db: Database, name: string): string {
+  const n = name.trim().toLowerCase();
+  return (n && db.parties.find(p => p.name.trim().toLowerCase() === n)?.phone) || '';
 }
 
 // Compact computed tax breakdown used inside GSTPanel summaries
@@ -358,8 +389,8 @@ function LedgerModal({ open, party, onClose }: { open: boolean; party: Party | n
   );
 }
 
-export function AddPaymentModal({ open, total, paid, modes, onClose, onSave }: {
-  open: boolean; total: number; paid: number; existingPayments?: Payment[];
+export function AddPaymentModal({ open, total, paid, modes, onClose, onSave, defaultDate }: {
+  open: boolean; total: number; paid: number; existingPayments?: Payment[]; defaultDate?: string;
   modes: string[]; onClose: () => void; onSave: (p: Omit<Payment, 'id' | 'createdAt'>) => void;
 }) {
   const [date, setDate] = useState(today());
@@ -368,8 +399,8 @@ export function AddPaymentModal({ open, total, paid, modes, onClose, onSave }: {
   const [reference, setReference] = useState('');
 
   React.useEffect(() => {
-    if (open) { setDate(today()); setAmount(String(round2(total - paid))); setMode(modes[0] || 'Cash'); setReference(''); }
-  }, [open, total, paid, modes]);
+    if (open) { setDate(defaultDate || today()); setAmount(String(round2(total - paid))); setMode(modes[0] || 'Cash'); setReference(''); }
+  }, [open, total, paid, modes, defaultDate]);
 
   return (
     <Modal open={open} onClose={onClose} title="Add Payment" maxWidth="max-w-sm" footer={
@@ -482,7 +513,7 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
                 <tr><td>Total Tax</td><td className="right">{fmtINR(entry.totalTax)}</td></tr>
               </>
             )}
-            {entry.roundAdjustment !== 0 && <tr><td>Rounding Adjustment</td><td className="right">{entry.roundAdjustment > 0 ? '+' : ''}{fmtINR(entry.roundAdjustment)}</td></tr>}
+            {type !== 'hulling' && entry.roundAdjustment !== 0 && <tr><td>Rounding Adjustment</td><td className="right">{entry.roundAdjustment > 0 ? '+' : ''}{fmtINR(entry.roundAdjustment)}</td></tr>}
             {entry.transportCost !== undefined && entry.transportCost > 0 && !pd && <tr><td>{hd ? 'Less: Transport' : 'Transport'}</td><td className="right">{fmtINR(entry.transportCost)}</td></tr>}
             {entry.loadingCost !== undefined && entry.loadingCost > 0 && !pd && <tr><td>{hd ? 'Less: Coolie / loading' : 'Loading'}</td><td className="right">{fmtINR(entry.loadingCost)}</td></tr>}
                         <tr className="total"><td>{hd ? 'NET RECEIVABLE' : 'TOTAL'}</td><td className="right">{fmtINR(dueTotal)}</td></tr>
@@ -665,7 +696,7 @@ export function DispatchPage() {
       }} />
       <Confirm open={!!delId} onClose={() => setDelId(null)} onConfirm={() => { if (delId) { deleteDispatch(delId); toast('Deleted'); } }} message="Delete dispatch? Stock reversed." />
       {viewEntry && <ReceiptModal entry={viewEntry} onClose={() => setViewEntry(null)} type="dispatch" />}
-      {payEntry && <AddPaymentModal open={!!payEntry} total={payEntry.finalTotal} paid={sumPayments(payEntry.payments)} existingPayments={payEntry.payments} modes={modeOptions}
+      {payEntry && <AddPaymentModal open={!!payEntry} total={payEntry.finalTotal} defaultDate={payEntry.date} paid={sumPayments(payEntry.payments)} existingPayments={payEntry.payments} modes={modeOptions}
         onClose={() => setPayEntry(null)} onSave={(p) => { addDispatchPayment(payEntry.id, p); setPayEntry(null); toast('Payment added'); }} />}
     </div>
   );
@@ -684,6 +715,12 @@ export function DispatchForm({ open, initial, onClose, onSave }: {
   const [vehicleNumber, setVehicleNumber] = useState(initial?.vehicleNumber || '');
   const [productId, setProductId] = useState(initial?.productId || 'pr_rice');
   const [varietyId, setVarietyId] = useState(initial?.varietyId || db.varieties[0]?.id || '');
+  const firstProd = React.useRef(true);
+  React.useEffect(() => {
+    if (firstProd.current) { firstProd.current = false; return; }
+    const list = varietiesOf(db, productId === 'pr_rice' ? 'rice' : 'paddy');
+    if (list.length && !list.some(v => v.id === varietyId)) setVarietyId(list[0].id);
+  }, [productId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [grossKg, setGrossKg] = useState(initial?.grossKg?.toString() || '');
   const [tareKg, setTareKg] = useState(initial?.tareKg?.toString() || '');
   const [bagWeightKg, setBagWeightKg] = useState(initial?.bagWeightKg?.toString() || '0');
@@ -796,7 +833,7 @@ export function DispatchForm({ open, initial, onClose, onSave }: {
         </div>
         {(productId === 'pr_rice' || productId === 'pr_paddy') && (
           <Select label="Variety" value={varietyId} onChange={e => setVarietyId(e.target.value)}
-            options={db.varieties.filter(v => v.active).map(v => ({ value: v.id, label: v.name }))} />
+            options={varietiesOf(db, productId === 'pr_rice' ? 'rice' : 'paddy').map(v => ({ value: v.id, label: v.name }))} />
         )}
         <div className="grid grid-cols-2 gap-2">
           <Input label="Gross (kg)" type="number" step="0.01" value={grossKg} onChange={e => setGrossKg(e.target.value)} />
@@ -894,7 +931,7 @@ export function SalesPage() {
       }} />
       <Confirm open={!!delId} onClose={() => setDelId(null)} onConfirm={() => { if (delId) { deleteSale(delId); toast('Deleted'); } }} message="Delete sale? Stock reversed." />
       {viewEntry && <ReceiptModal entry={viewEntry} onClose={() => setViewEntry(null)} type="sale" />}
-      {payEntry && <AddPaymentModal open={!!payEntry} total={payEntry.finalTotal} paid={sumPayments(payEntry.payments)} existingPayments={payEntry.payments} modes={modeOptions}
+      {payEntry && <AddPaymentModal open={!!payEntry} total={payEntry.finalTotal} defaultDate={payEntry.date} paid={sumPayments(payEntry.payments)} existingPayments={payEntry.payments} modes={modeOptions}
         onClose={() => setPayEntry(null)} onSave={(p) => { addSalePayment(payEntry.id, p); setPayEntry(null); toast('Payment added'); }} />}
     </div>
   );
@@ -912,6 +949,12 @@ function SaleForm({ open, initial, onClose, onSave }: {
   const [buyerName, setBuyerName] = useState(initial?.partyId ? partyName(db, initial.partyId) : '');
   const [productId, setProductId] = useState(initial?.productId || 'pr_rice');
   const [varietyId, setVarietyId] = useState(initial?.varietyId || db.varieties[0]?.id || '');
+  const firstProd = React.useRef(true);
+  React.useEffect(() => {
+    if (firstProd.current) { firstProd.current = false; return; }
+    const list = varietiesOf(db, productId === 'pr_rice' ? 'rice' : 'paddy');
+    if (list.length && !list.some(v => v.id === varietyId)) setVarietyId(list[0].id);
+  }, [productId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [quantityKg, setQuantityKg] = useState(initial?.quantityKg?.toString() || '');
   const [ratePerQtl, setRatePerQtl] = useState(initial?.ratePerQtl?.toString() || '');
   const [vehicleNumber, setVehicleNumber] = useState(initial?.vehicleNumber || '');
@@ -979,7 +1022,7 @@ function SaleForm({ open, initial, onClose, onSave }: {
             options={products.map(p => ({ value: p.id, label: p.name }))} />
           {(productId === 'pr_rice' || productId === 'pr_paddy') && (
             <Select label="Variety" value={varietyId} onChange={e => setVarietyId(e.target.value)}
-              options={db.varieties.filter(v => v.active).map(v => ({ value: v.id, label: v.name }))} />
+              options={varietiesOf(db, productId === 'pr_rice' ? 'rice' : 'paddy').map(v => ({ value: v.id, label: v.name }))} />
           )}
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -1073,7 +1116,7 @@ export function ExpensesPage() {
         setShowForm(false); setEditing(null);
       }} />
       <Confirm open={!!delId} onClose={() => setDelId(null)} onConfirm={() => { if (delId) { deleteExpense(delId); toast('Deleted'); } }} message="Delete expense?" />
-      {payEntry && <AddPaymentModal open={!!payEntry} total={payEntry.amount} paid={sumPayments(payEntry.payments)} existingPayments={payEntry.payments} modes={modeOptions}
+      {payEntry && <AddPaymentModal open={!!payEntry} total={payEntry.amount} defaultDate={payEntry.date} paid={sumPayments(payEntry.payments)} existingPayments={payEntry.payments} modes={modeOptions}
         onClose={() => setPayEntry(null)} onSave={(p) => { addExpensePayment(payEntry.id, p); setPayEntry(null); toast('Payment added'); }} />}
     </div>
   );
@@ -1142,7 +1185,7 @@ function ExpenseForm({ open, initial, onClose, onSave }: {
             <input type="checkbox" checked={isPersonal} onChange={e => setIsPersonal(e.target.checked)} /> Personal expense
           </label>
         </div>
-        <PaymentForm total={Number(amount) || 0} paid={payments.reduce((s: number, p: any) => s + p.amount, 0)} payments={payments} onChange={setPayments} modeOptions={modeOptions} />
+        <PaymentForm defaultDate={date} total={Number(amount) || 0} paid={payments.reduce((s: number, p: any) => s + p.amount, 0)} payments={payments} onChange={setPayments} modeOptions={modeOptions} />
         <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
     </Modal>
@@ -1243,7 +1286,7 @@ function ElectricityForm({ open, initial, onClose, onSave }: {
           <Input label="Units Consumed" type="number" value={units} onChange={e => setUnits(e.target.value)} />
           <Input label="Amount" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} suffix="₹" />
         </div>
-        <PaymentForm total={Number(amount) || 0} paid={payments.reduce((s, p) => s + p.amount, 0)} payments={payments} onChange={setPayments} modeOptions={modeOptions} />
+        <PaymentForm defaultDate={billDate} total={Number(amount) || 0} paid={payments.reduce((s, p) => s + p.amount, 0)} payments={payments} onChange={setPayments} modeOptions={modeOptions} />
         <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
     </Modal>
@@ -1439,7 +1482,7 @@ export function BagsPage() {
 
 // ============ SETTINGS ============
 export function SettingsPage() {
-  const { db, updateSettings, upsertVariety, upsertCategory, deleteCategory, resetAll } = useDB();
+  const { db, updateSettings, resetAll } = useDB();
   const [millName, setMillName] = useState(db.settings.millName);
   const [address, setAddress] = useState(db.settings.address);
   const [phone, setPhone] = useState(db.settings.phone);
@@ -1453,9 +1496,6 @@ export function SettingsPage() {
     paddy: String(db.settings.minStockQtl?.paddy || 0), rice: String(db.settings.minStockQtl?.rice || 0),
     bran: String(db.settings.minStockQtl?.bran || 0), husk: String(db.settings.minStockQtl?.husk || 0),
   });
-  const [newVariety, setNewVariety] = useState('');
-  const [newVarietyCat, setNewVarietyCat] = useState<'small' | 'big' | 'other'>('small');
-  const [newExpenseCat, setNewExpenseCat] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   return (
@@ -1488,44 +1528,11 @@ export function SettingsPage() {
           <Input label="Husk min (Qtl)" type="number" value={minStock.husk} onChange={e => setMinStock({ ...minStock, husk: e.target.value })} />
         </div>
       </Card>
-      <Card className="p-3 space-y-2">
-        <h3 className="font-semibold text-forest-800">Paddy Varieties</h3>
-        <div className="space-y-1">
-          {db.varieties.map(v => (
-            <div key={v.id} className={`flex items-center gap-2 rounded px-2 py-1.5 text-sm ${v.active ? 'bg-gray-50' : 'bg-gray-100 opacity-60'}`}>
-              <span className="flex-1 min-w-0 truncate">{v.name}</span>
-              <select value={v.category} onChange={e => { upsertVariety({ id: v.id, name: v.name, category: e.target.value as any }); toast('Size mapping saved'); }}
-                className="text-xs border border-gray-200 rounded px-1 py-1 bg-white">
-                <option value="small">Small paddy</option><option value="big">Big paddy</option><option value="other">Other</option>
-              </select>
-              <button onClick={() => { upsertVariety({ id: v.id, name: v.name, active: !v.active }); toast(v.active ? 'Variety deactivated' : 'Variety reactivated'); }}
-                className={`${v.active ? 'text-red-600' : 'text-green-700'} text-xs`}>{v.active ? 'Hide' : 'Show'}</button>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <Input value={newVariety} onChange={e => setNewVariety(e.target.value)} placeholder="Add new variety" wrapperClassName="flex-1" />
-          <Select value={newVarietyCat} onChange={e => setNewVarietyCat(e.target.value as any)} wrapperClassName="w-28" options={[
-            { value: 'small', label: 'Small' }, { value: 'big', label: 'Big' }, { value: 'other', label: 'Other' }
-          ]} />
-          <Button size="sm" onClick={() => { if (newVariety.trim()) { upsertVariety({ name: newVariety.trim(), category: newVarietyCat }); setNewVariety(''); toast('Added'); } }}>Add</Button>
-        </div>
-      </Card>
-      <Card className="p-3 space-y-2">
-        <h3 className="font-semibold text-forest-800">Expense Categories</h3>
-        <div className="space-y-1">
-          {db.categories.filter(c => c.type === 'expense').map(c => (
-            <div key={c.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5 text-sm">
-              <span>{c.name}</span>
-              <button onClick={() => { deleteCategory(c.id); toast('Removed'); }} className="text-red-600 text-xs">Delete</button>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <Input value={newExpenseCat} onChange={e => setNewExpenseCat(e.target.value)} placeholder="Add category" wrapperClassName="flex-1" />
-          <Button size="sm" onClick={() => { if (newExpenseCat.trim()) { upsertCategory({ name: newExpenseCat.trim(), type: 'expense' }); setNewExpenseCat(''); toast('Added'); } }}>Add</Button>
-        </div>
-      </Card>
+      <div className="-mx-3 border-t border-gray-200 pt-3">
+        <h3 className="font-semibold text-forest-800 px-3">Dropdown Values</h3>
+        <p className="text-[11px] text-gray-500 px-3">Add, edit, hide or delete the values used in every dropdown: paddy varieties, rice varieties, sale items, payment modes, expense categories, work types and trading goods.</p>
+        <InventoryPage />
+      </div>
       <Button variant="primary" className="w-full" onClick={() => {
         updateSettings({
           millName, address, phone, gstin: gstin || undefined, receiptFooter,
@@ -1645,15 +1652,15 @@ export function BackupPage() {
 }
 
 // ============ REPORTS ============
-export function ReportsPage() {
+export function ReportsOverview({ range }: { range: { start: string; end: string } }) {
   const { db } = useDB();
-  const [range, setRange] = useState('month');
+  const inR = (d: string) => inRange(d, { preset: 'custom', start: range.start, end: range.end });
 
   const data = useMemo(() => {
-    const hulling = db.hulling.filter(h => inRange(h.date, { preset: range as any }));
-    const purchases = db.purchases.filter(p => inRange(p.date, { preset: range as any }));
-    const sales = [...db.sales, ...db.dispatches].filter(s => inRange(s.date, { preset: range as any }));
-    const expenses = db.expenses.filter(e => inRange(e.date, { preset: range as any }) && !e.isPersonal);
+    const hulling = db.hulling.filter(h => inR(h.date));
+    const purchases = db.purchases.filter(p => inR(p.date));
+    const sales = [...db.sales, ...db.dispatches].filter(s => inR(s.date));
+    const expenses = db.expenses.filter(e => inR(e.date) && !e.isPersonal);
 
     return {
       hullingQty: hulling.reduce((s, h) => s + h.quantityKg, 0),
@@ -1668,11 +1675,10 @@ export function ReportsPage() {
         return acc;
       }, {}),
     };
-  }, [db, range]);
+  }, [db, range.start, range.end]);
 
   return (
-    <div className="p-3 space-y-3 pb-6">
-      <DateRangePresets value={range} onChange={setRange} />
+    <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <KPICard label="Hulling Revenue" value={fmtINR(data.hullingRev)} sub={fmtQty(data.hullingQty)} tone="green" />
         <KPICard label="Purchases" value={fmtINR(data.purchAmt)} sub={fmtQty(data.purchQty)} tone="blue" />

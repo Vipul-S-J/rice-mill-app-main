@@ -3,16 +3,18 @@ import { DBProvider } from './context';
 import { ToastHost } from './components/ui';
 import {
   PartiesPage, StockPage, ExpensesPage,
-  ElectricityPage, CashbookPage, OutstandingPage, BagsPage, SettingsPage, BackupPage, ReportsPage,
+  ElectricityPage, CashbookPage, OutstandingPage, BagsPage, SettingsPage, BackupPage,
 } from './components/pages';
 import { PaddyDispatchPage } from './components/paddyDispatch';
 import { HuskDispatchPage } from './components/huskDispatch';
 import { VehiclePage } from './components/vehicle';
+import { ReportsPage } from './components/reports';
 import { LabourPage } from './components/labour';
 import { ProductionPage } from './components/production';
 import { TradingPage } from './components/trading';
 import { HullingPage } from './components/hulling';
 import { PurchasePage } from './components/purchase';
+import type { PurchasePrefill } from './components/purchase';
 import { Dashboard } from './components/dashboard';
 import { Welcome } from './components/Welcome';
 import { SalesPage } from './components/sales';
@@ -67,6 +69,7 @@ function AppShell() {
   const [entered, setEntered] = useState(false);
   const [tab, setTab] = useState<MainTab>('home');
   const [moreStack, setMoreStack] = useState<MorePage | null>(null);
+  const [purchasePrefill, setPurchasePrefill] = useState<PurchasePrefill | null>(null);
 
   const goToTab = (t: MainTab) => { setMoreStack(null); setTab(t); };
   const nav = (id: string) => {
@@ -99,8 +102,8 @@ function AppShell() {
 
       <main className="flex-1 overflow-y-auto overflow-x-hidden">
         {tab === 'home' && <Dashboard onNav={nav} />}
-        {tab === 'hulling' && <HullingPage />}
-        {tab === 'purchase' && <PurchasePage />}
+        {tab === 'hulling' && <HullingPage onPaddy={p => { setPurchasePrefill(p); goToTab('purchase'); }} />}
+        {tab === 'purchase' && <PurchasePage prefill={purchasePrefill} onPrefillUsed={() => setPurchasePrefill(null)} />}
         {tab === 'sales' && <SalesPage />}
         {tab === 'trading' && <TradingPage />}
         {tab === 'more' && !moreStack && <MoreMenu onOpen={setMoreStack} />}

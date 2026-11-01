@@ -69,6 +69,7 @@ export function LabourPage() {
   const [payAmt, setPayAmt] = useState('');
   const [payMode, setPayMode] = useState('Cash');
   const [payDate, setPayDate] = useState(today());
+  React.useEffect(() => { setPayDate(tab === 'calculate' ? toDate : singleDate); }, [tab, toDate, singleDate]); // payment date follows the entry date
 
   // Manual adjustment fields (so user can adjust the auto-calculated result if needed)
   const [manualTotalOverride, setManualTotalOverride] = useState<string | null>(null);
@@ -170,7 +171,7 @@ export function LabourPage() {
     setNotes(entry.notes || '');
     setPayments(entry.payments || []);
     setPayAmt('');
-    setPayDate(today());
+    setPayDate(entry.date || today());
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -716,6 +717,7 @@ export function LabourPage() {
         <AddPaymentModal
           open
           total={payEntry.totalAmount}
+          defaultDate={payEntry.date}
           paid={sumPayments(payEntry.payments)}
           modes={modes}
           onClose={() => setPayEntry(null)}
