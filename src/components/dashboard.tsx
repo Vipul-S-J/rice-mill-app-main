@@ -221,12 +221,12 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
   const dispNet = S.dispRev - S.dispCosts - S.dispBuy;
 
   const quick = [
-    { id: 'purchase', label: 'Paddy Purchase', icon: '🛒', bg: 'bg-forest-700' },
-    { id: 'hulling', label: 'Hulling Entry', icon: '🌾', bg: 'bg-amber-700' },
-    { id: 'sales', label: 'Sales', icon: '🚚', bg: 'bg-blue-600' },
-    { id: 'dispatch', label: 'Paddy Dispatch', icon: '📦', bg: 'bg-purple-700' },
-    { id: 'reports', label: 'Reports', icon: '📊', bg: 'bg-red-600' },
-    { id: 'trading', label: 'Trading', icon: '🏪', bg: 'bg-orange-700' },
+    { id: 'purchase', label: 'Paddy Purchase', icon: '🛒', bg: 'bg-forest-100' },
+    { id: 'hulling', label: 'Hulling Entry', icon: '🌾', bg: 'bg-amber-100' },
+    { id: 'sales', label: 'Sales', icon: '🚚', bg: 'bg-sky-100' },
+    { id: 'dispatch', label: 'Paddy Dispatch', icon: '📦', bg: 'bg-violet-100' },
+    { id: 'reports', label: 'Reports', icon: '📊', bg: 'bg-rose-100' },
+    { id: 'trading', label: 'Trading', icon: '🏪', bg: 'bg-orange-100' },
   ];
 
   return (
@@ -280,7 +280,7 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
           <div className="grid grid-cols-6 gap-1.5">
             {quick.map(q => (
               <button key={q.id} onClick={() => onNav(q.id)} className="flex flex-col items-center gap-1 active:scale-95 transition-transform">
-                <span className={`w-12 h-12 rounded-2xl ${q.bg} text-white text-xl flex items-center justify-center shadow-sm`}>{q.icon}</span>
+                <span className={`w-12 h-12 rounded-2xl ${q.bg} text-xl flex items-center justify-center border border-white shadow-soft`}>{q.icon}</span>
                 <span className="text-[9px] font-semibold text-gray-700 text-center leading-tight">{q.label}</span>
               </button>
             ))}

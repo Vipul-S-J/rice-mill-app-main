@@ -1,30 +1,56 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter-latin.woff2') format('woff2-variations');
+}
 @theme {
-  --color-forest-50: #f0f7f3;
-  --color-forest-100: #d8ece0;
-  --color-forest-200: #b1d9c1;
-  --color-forest-300: #80bd99;
-  --color-forest-400: #4f9c73;
-  --color-forest-500: #2f7d56;
-  --color-forest-600: #1f6343;
-  --color-forest-700: #1b4332;
-  --color-forest-800: #143629;
-  --color-forest-900: #0f2a20;
-  --color-gold-400: #d4af37;
-  --color-gold-500: #c49b1f;
-  --color-gold-600: #a17d17;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Emerald (default). Other themes override these same variables below. */
+  --color-forest-50: #f0fdf6;
+  --color-forest-100: #d9f8e6;
+  --color-forest-200: #b4f0cf;
+  --color-forest-300: #7fe1b0;
+  --color-forest-400: #44cb8c;
+  --color-forest-500: #1fae6e;
+  --color-forest-600: #138a58;
+  --color-forest-700: #0f6e48;
+  --color-forest-800: #0c5538;
+  --color-forest-900: #083d29;
+  --color-gold-400: #f2b33d;
+  --color-gold-500: #b4690e;
+  --color-gold-600: #8f520a;
   --color-cream-50: #fdfcfa;
   --color-cream-100: #faf7f0;
 }
-
+/* ---- selectable colour themes (Settings > Appearance) ---- */
+html[data-theme='ocean'] {
+  --color-forest-50: #eff6ff; --color-forest-100: #dbeafe; --color-forest-200: #bfdbfe; --color-forest-300: #93c5fd; --color-forest-400: #60a5fa;
+  --color-forest-500: #3b82f6; --color-forest-600: #2563eb; --color-forest-700: #1d4ed8; --color-forest-800: #1e40af; --color-forest-900: #1e3a8a;
+}
+html[data-theme='sunset'] {
+  --color-forest-50: #fff7ed; --color-forest-100: #ffedd5; --color-forest-200: #fed7aa; --color-forest-300: #fdba74; --color-forest-400: #fb923c;
+  --color-forest-500: #f97316; --color-forest-600: #ea580c; --color-forest-700: #c2410c; --color-forest-800: #9a3412; --color-forest-900: #7c2d12;
+}
+html[data-theme='violet'] {
+  --color-forest-50: #f5f3ff; --color-forest-100: #ede9fe; --color-forest-200: #ddd6fe; --color-forest-300: #c4b5fd; --color-forest-400: #a78bfa;
+  --color-forest-500: #8b5cf6; --color-forest-600: #7c3aed; --color-forest-700: #6d28d9; --color-forest-800: #5b21b6; --color-forest-900: #4c1d95;
+}
+html[data-theme='graphite'] {
+  --color-forest-50: #f8fafc; --color-forest-100: #f1f5f9; --color-forest-200: #e2e8f0; --color-forest-300: #cbd5e1; --color-forest-400: #94a3b8;
+  --color-forest-500: #64748b; --color-forest-600: #475569; --color-forest-700: #334155; --color-forest-800: #1e293b; --color-forest-900: #0f172a;
+}
 html, body, #root {
   height: 100%;
-  background-color: #f5f6f4;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f4f6f8;
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
-
 * {
   box-sizing: border-box;
 }
@@ -35,7 +61,7 @@ html, body, #root {
   height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #b1d9c1;
+  background: var(--color-forest-200);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-track {
@@ -84,4 +110,10 @@ input[type="number"] {
 }
 .animate-fade-in {
   animation: fadeIn 0.2s ease-out;
+}
+
+/* soft elevation used by cards and the bottom bar */
+.shadow-soft { box-shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 6px 20px -6px rgb(16 24 40 / 0.08); }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

@@ -21,12 +21,12 @@ export function Welcome({ onEnter }: { onEnter: () => void }) {
   const { db } = useDB();
   const pills = ['Inventory Tracking', 'Financial Reports', 'Party Ledger', 'JSON Backup'];
   return (
-    <div className="fixed inset-0 z-[200] bg-[#00301f] overflow-y-auto">
+    <div className="fixed inset-0 z-[200] bg-gradient-to-b from-forest-900 via-forest-800 to-forest-700 overflow-y-auto">
       <div className="min-h-full max-w-md mx-auto flex flex-col items-center justify-between px-6 pt-16 pb-8 text-center animate-fade-in">
         <div className="flex-1 flex flex-col items-center justify-center w-full">
-          <div className="relative w-36 h-36 rounded-full border border-[#8a7a55]/60 flex items-center justify-center">
-            <div className="w-32 h-32 rounded-full bg-[#17402f] flex items-center justify-center">
-              <div className="w-24 h-24 rounded-full bg-[#2f6b50] flex items-center justify-center overflow-hidden">
+          <div className="relative w-36 h-36 rounded-full border border-white/25 flex items-center justify-center">
+            <div className="w-32 h-32 rounded-full bg-white/10 flex items-center justify-center">
+              <div className="w-24 h-24 rounded-full bg-white/15 flex items-center justify-center overflow-hidden">
                 {db.settings.logo
                   ? <img src={db.settings.logo} alt="Logo" className="w-full h-full object-cover" />
                   : <WheatIcon className="w-14 h-14" />}
@@ -34,15 +34,15 @@ export function Welcome({ onEnter }: { onEnter: () => void }) {
             </div>
           </div>
 
-          <div className="mt-9 text-[13px] font-semibold tracking-[0.42em] text-[#c9a46a] pl-[0.42em]">SHRI PARSHWANATHA</div>
+          <div className="mt-9 text-[13px] font-semibold tracking-[0.42em] text-gold-400 pl-[0.42em]">SHRI PARSHWANATHA</div>
           <h1 className="mt-2 text-[40px] leading-none font-extrabold text-white tracking-tight">SPRM TRADERS</h1>
-          <div className="mt-5 h-1 w-14 rounded-full bg-[#3a8a64]" />
-          <p className="mt-5 text-[17px] text-[#a9c2b5]">Complete Mill Operations Management</p>
+          <div className="mt-5 h-1 w-14 rounded-full bg-gold-400" />
+          <p className="mt-5 text-[17px] text-forest-100">Complete Mill Operations Management</p>
 
           <div className="mt-7 flex flex-wrap justify-center gap-2.5 max-w-[320px]">
             {pills.map(p => (
-              <span key={p} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full border border-[#2d5a46] bg-[#0d3a28] text-[13px] text-[#dbe8e0]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#c9a46a]" />{p}
+              <span key={p} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full border border-white/15 bg-white/10 backdrop-blur text-[13px] text-white/90">
+                <span className="w-1.5 h-1.5 rounded-full bg-gold-400" />{p}
               </span>
             ))}
           </div>
@@ -51,11 +51,11 @@ export function Welcome({ onEnter }: { onEnter: () => void }) {
         <div className="w-full mt-10">
           <button
             onClick={onEnter}
-            className="w-full py-4 rounded-2xl bg-[#d3a574] text-[#00301f] text-lg font-extrabold tracking-wide shadow-lg active:scale-[0.98] transition-transform"
+            className="w-full py-4 rounded-2xl bg-white text-forest-800 text-lg font-extrabold tracking-wide shadow-xl shadow-black/20 active:scale-[0.98] transition-transform"
           >
             JAI JINENDRA <span className="ml-2">→</span>
           </button>
-          <div className="mt-4 text-xs text-[#6f8f7e]">Offline-First • No Internet Required</div>
+          <div className="mt-4 text-xs text-forest-200">Offline-First • No Internet Required</div>
         </div>
       </div>
     </div>
