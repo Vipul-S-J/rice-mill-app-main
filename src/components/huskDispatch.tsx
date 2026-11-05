@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useDB } from '../context';
 import { computeStock, dispatchDue, fmtDate, fmtINR, inRange, nextTripNo, paymentStatus, round2, sumPayments, today, uid } from '../db';
 import type { DispatchEntry, HuskDispatchDetail, Payment } from '../types';
-import { Badge, Button, Card, Confirm, DateRangePresets, EmptyState, Input, Select, toast } from './ui';
+import { Badge, Button, Card, Confirm, DateRangePresets, EmptyState, ExtraPaid, Input, Select, toast } from './ui';
 import { AddPaymentModal, PartyInput, ReceiptModal, partyName, statusBadge, useEnsureParty, usePaymentModes } from './pages';
 
 type Measure = 'bags' | 'weight';
@@ -261,7 +261,7 @@ export function HuskDispatchPage() {
                   <div className="text-right shrink-0"><div className="text-sm font-extrabold">{fmtINR(due)}</div><div className="text-[10px] text-gray-500">{qtyTxt}</div></div>
                 </div>
                 <div className="flex flex-wrap gap-1.5 items-center">
-                  <Badge tone="gold">Husk</Badge>{statusBadge(st)}
+                  <Badge tone="gold">Husk</Badge>{statusBadge(st)}<ExtraPaid total={due} payments={d.payments} />
                   <span className="text-[10px] text-gray-500">Total {fmtINR(h.totalAmount)} − deductions {fmtINR(h.coolie + h.transport)}</span>
                 </div>
                 <div className="flex gap-3 pt-0.5">

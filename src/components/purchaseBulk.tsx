@@ -120,7 +120,6 @@ export function BulkPurchaseModal({ open, onClose }: { open: boolean; onClose: (
           if (!(x.rate > 0)) errors.push('Enter a rate (row or common rate)');
         });
         if ((r.bagType === 'new' || r.bagType === 'old') && !(bagsN > 0)) errors.push('Enter number of bags');
-        if (r.paid && Number(r.paid) > final + 0.01) errors.push('Paid is more than total');
       }
       let dup = false;
       if (!empty && errors.length === 0) {

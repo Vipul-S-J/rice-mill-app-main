@@ -16,7 +16,7 @@ import type {
 import {
   Button, Input, Select, Card, KPICard, Modal, Confirm, Badge, GSTPanel,
   EmptyState, Tabs, ListRow, SectionHeader, DateRangePresets, SearchBar,
-  PaymentSummary, PaymentForm, CalcField, Textarea, toast
+  PaymentSummary, PaymentForm, CalcField, Textarea, ExtraPaid, toast
 } from './ui';
 
 // ============ Reusable helpers ============
@@ -419,6 +419,7 @@ export function AddPaymentModal({ open, total, paid, modes, onClose, onSave, def
           <Input type="date" label="Date" value={date} onChange={e => setDate(e.target.value)} />
           <Input label="Amount" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} suffix="₹" />
         </div>
+        {Number(amount) > round2(total - paid) + 0.009 && <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠ {fmtINR(round2(Number(amount) - (total - paid)))} more than the pending amount. You can still save; it is flagged as extra paid.</div>}
         <Select label="Mode" value={mode} onChange={e => setMode(e.target.value)} options={modes} />
         <Input label="Reference" value={reference} onChange={e => setReference(e.target.value)} placeholder="Optional" />
       </div>
@@ -429,6 +430,7 @@ export function AddPaymentModal({ open, total, paid, modes, onClose, onSave, def
 // ============ PDF / RECEIPT MODAL ============
 export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: () => void; type: 'hulling' | 'purchase' | 'dispatch' | 'sale'; }) {
   const { db } = useDB();
+  const [showPending, setShowPending] = useState(true);
   const title = type === 'hulling' ? 'Hulling Receipt' : type === 'purchase' ? 'Purchase Voucher' : type === 'dispatch' ? 'Dispatch Slip' : 'Sale Invoice';
   const numKey = type === 'hulling' ? 'receiptNumber' : type === 'purchase' ? 'voucherNumber' : type === 'dispatch' ? 'dispatchNumber' : 'invoiceNumber';
 
@@ -472,6 +474,10 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
         <Button variant="gold" onClick={handleDownload}>Print / Save PDF</Button>
       </>
     }>
+      <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 mb-2">
+        <input type="checkbox" checked={showPending} onChange={e => setShowPending(e.target.checked)} />
+        Show payments and pending balance in the PDF
+      </label>
       <div id={`print-area-${entry.id}`} className="print-area bg-white p-4 text-sm">
         <div className="text-center border-b-2 border-forest-700 pb-3 mb-3">
           <h1 className="text-xl font-bold text-forest-800">{db.settings.millName}</h1>
@@ -504,7 +510,7 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
             ))}
             {!(hd && entry.netKg <= 0) && <tr><td>Quantity</td><td className="right bold">{fmtQty(entry.quantityKg ?? entry.netKg)} ({fmtNumber(kgToQtl(entry.quantityKg ?? entry.netKg), 3)} Qtl)</td></tr>}
             {!hd && <tr><td>{pd ? 'Average rate per Qtl' : 'Rate per Qtl'}</td><td className="right">{fmtINR(entry.ratePerQtl)}</td></tr>}
-            <tr><td>Base Amount</td><td className="right">{fmtINR(entry.baseAmount)}</td></tr>
+            {type !== 'hulling' && <tr><td>Base Amount</td><td className="right">{fmtINR(entry.baseAmount)}</td></tr>}
             {entry.taxableAmount !== undefined && entry.gstMode !== 'none' && (
               <>
                 <tr><td>Taxable Value</td><td className="right">{fmtINR(entry.taxableAmount)}</td></tr>
@@ -517,11 +523,13 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
             {entry.transportCost !== undefined && entry.transportCost > 0 && !pd && <tr><td>{hd ? 'Less: Transport' : 'Transport'}</td><td className="right">{fmtINR(entry.transportCost)}</td></tr>}
             {entry.loadingCost !== undefined && entry.loadingCost > 0 && !pd && <tr><td>{hd ? 'Less: Coolie / loading' : 'Loading'}</td><td className="right">{fmtINR(entry.loadingCost)}</td></tr>}
                         <tr className="total"><td>{hd ? 'NET RECEIVABLE' : 'TOTAL'}</td><td className="right">{fmtINR(dueTotal)}</td></tr>
-            <tr><td>Paid</td><td className="right text-green-700">{fmtINR(paid)}</td></tr>
-            <tr><td>Balance Due</td><td className="right text-red-600">{fmtINR(pending)}</td></tr>
+            {showPending && <tr><td>Paid</td><td className="right text-green-700">{fmtINR(paid)}</td></tr>}
+            {showPending && (pending < -0.009
+              ? <tr><td>Extra paid</td><td className="right" style={{ color: '#b45309' }}>{fmtINR(-pending)}</td></tr>
+              : <tr><td>Balance Due</td><td className="right text-red-600">{fmtINR(pending)}</td></tr>)}
           </tbody>
         </table>
-        {entry.payments?.length > 0 && (
+        {showPending && entry.payments?.length > 0 && (
           <>
             <div className="font-bold mt-3 mb-1 text-xs text-gray-700">Payments:</div>
             <table>
@@ -1100,7 +1108,7 @@ export function ExpensesPage() {
                   {e.isPersonal && <Badge tone="gold">Personal</Badge>}
                   <div className="mt-0.5">{statusBadge(st)}</div></>}
                 leading={<div className="w-10 h-10 rounded-lg bg-red-100 text-red-700 flex items-center justify-center text-sm font-bold">💸</div>}
-                right={<div className="text-right"><div className="font-bold text-sm">{fmtINR(e.amount)}</div>{paid < e.amount && <div className="text-[10px] text-red-600">Due: {fmtINR(e.amount - paid)}</div>}</div>}
+                right={<div className="text-right"><div className="font-bold text-sm">{fmtINR(e.amount)}</div>{paid < e.amount && <div className="text-[10px] text-red-600">Due: {fmtINR(e.amount - paid)}</div>}<ExtraPaid total={e.amount} payments={e.payments} /></div>}
                 actions={<>
                   <button onClick={() => { setEditing(e); setShowForm(true); }} className="text-[11px] text-blue-700 font-medium">Edit</button>
                   {!e.isPaid && <button onClick={() => setPayEntry(e)} className="text-[11px] text-green-700 font-medium">Pay</button>}
@@ -1218,7 +1226,7 @@ export function ElectricityPage() {
                 subtitle={<><span>Units: {e.units || '—'}</span>{e.dueDate && <span> · Due: {fmtDate(e.dueDate)}</span>}
                   <div className="mt-0.5">{paid < e.amount ? <Badge tone="red">Unpaid</Badge> : <Badge tone="green">PAID</Badge>}</div></>}
                 leading={<div className="w-10 h-10 rounded-lg bg-yellow-100 text-yellow-700 flex items-center justify-center text-sm font-bold">⚡</div>}
-                right={<div className="text-right"><div className="font-bold text-sm">{fmtINR(e.amount)}</div>{paid < e.amount && <div className="text-[10px] text-red-600">Due: {fmtINR(e.amount - paid)}</div>}</div>}
+                right={<div className="text-right"><div className="font-bold text-sm">{fmtINR(e.amount)}</div>{paid < e.amount && <div className="text-[10px] text-red-600">Due: {fmtINR(e.amount - paid)}</div>}<ExtraPaid total={e.amount} payments={e.payments} /></div>}
                 actions={<>
                   <button onClick={() => { setEditing(e); setShowForm(true); }} className="text-[11px] text-blue-700 font-medium">Edit</button>
                   {paid < e.amount && <button onClick={() => { addElectricityPayment(e.id, { date: today(), amount: e.amount - paid, mode: modeOptions[0] || 'Cash' }); toast('Payment added'); }} className="text-[11px] text-green-700 font-medium">Mark Paid</button>}

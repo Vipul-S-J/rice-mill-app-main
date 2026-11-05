@@ -7,7 +7,7 @@ import type { PaddyLot } from '../db';
 import type {
   DispatchEntry, PaddyDispatchAlloc, PaddyDispatchDetail, PaddyDispatchRow, Payment,
 } from '../types';
-import { Badge, Button, Card, Confirm, DateRangePresets, EmptyState, Input, Select, toast } from './ui';
+import { Badge, Button, Card, Confirm, DateRangePresets, EmptyState, ExtraPaid, Input, Select, toast } from './ui';
 import {
   AddPaymentModal, DispatchForm, PartyInput, ReceiptModal, partyName, statusBadge, useEnsureParty, usePaymentModes,
 } from './pages';
@@ -787,6 +787,7 @@ export function PaddyDispatchPage() {
                   {p ? <Badge tone={p.size === 'small' ? 'gold' : 'green'}>{p.size === 'both' ? 'Small + Big' : p.size === 'big' ? 'Big' : 'Small'} paddy</Badge> : <Badge tone="gray">Other product</Badge>}
                   {p && <Badge tone="blue">{p.mode === 'fifo' ? 'FIFO' : 'Manual'}</Badge>}
                   {statusBadge(st)}
+                  <ExtraPaid total={due} payments={d.payments} />
                   {p && <Badge tone={p.profit >= 0 ? 'green' : 'red'}>P/L {p.profit >= 0 ? '+' : '−'}{fmtINR(Math.abs(p.profit))}</Badge>}
                 </div>
                 {p && (

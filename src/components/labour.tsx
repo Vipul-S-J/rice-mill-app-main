@@ -7,7 +7,7 @@ import type { LabourEntry, Payment } from '../types';
 import type { DateFilterValue } from './ui';
 import {
   Badge, Button, Card, Confirm, DateFilter, EmptyState, Input, MiniBtn, Modal,
-  PayBox, SearchBar, Select, toast,
+  PayBox, SearchBar, Select, ExtraPaid, toast,
 } from './ui';
 import { AddPaymentModal, PartyInput, partyName, useEnsureParty, usePaymentModes, useWorkTypes } from './pages';
 
@@ -695,6 +695,7 @@ export function LabourPage() {
                       ) : (
                         <span className="text-green-700 font-bold">PAID</span>
                       )}
+                      <ExtraPaid total={l.totalAmount} payments={l.payments} />
                     </span>
                   </div>
                 </div>

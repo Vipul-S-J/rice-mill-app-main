@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { Database, PurchaseEntry } from '../types';
 import { fmtINR, fmtQtlKg, fmtNumber, fmtDate, sumPayments, round2, bagSummary } from '../db';
 import { esc, VOUCHER_CSS, printHtml, shareText } from '../utils/print';
@@ -6,7 +7,7 @@ import { Modal, Button, toast } from './ui';
 const SIZE_LABEL: Record<string, string> = { small: 'Small', big: 'Big' };
 
 /** Single source for the voucher: used for on-screen preview AND the printed / saved PDF. */
-export function purchaseVoucherHtml(db: Database, p: PurchaseEntry): string {
+export function purchaseVoucherHtml(db: Database, p: PurchaseEntry, showPending = true): string {
   const s = db.settings;
   const party = db.parties.find(x => x.id === p.partyId);
   const vName = (id: string) => db.varieties.find(v => v.id === id)?.name || id;
@@ -33,7 +34,7 @@ export function purchaseVoucherHtml(db: Database, p: PurchaseEntry): string {
       <tr><td class="b">Net weight (gross − all deductions)</td><td class="r b">${fmtNumber(p.grossKg - p.tareKg - p.bagWeightKg - p.moistureDeductionKg - p.otherDeductionsKg, 2)} kg</td></tr>
     </table>` : '';
 
-  const payRows = p.payments.length ? `
+  const payRows = showPending && p.payments.length ? `
     <div class="h">Payments</div>
     <table><tr><th>Date</th><th>Mode</th><th>Ref</th><th class="r">Amount</th></tr>
     ${p.payments.map(x => `<tr><td>${fmtDate(x.date)}</td><td>${esc(x.mode)}</td><td>${esc(x.reference || '-')}</td><td class="r">${fmtINR(x.amount)}</td></tr>`).join('')}</table>` : '';
@@ -63,8 +64,8 @@ export function purchaseVoucherHtml(db: Database, p: PurchaseEntry): string {
     <tr><td>Total tax (${p.gstMode})</td><td class="r">${fmtINR(p.totalTax || 0)}</td></tr>` : ''}
     ${bag.charge > 0 ? `<tr><td>Less: new bag charge</td><td class="r red">- ${fmtINR(bag.charge)}</td></tr>` : ''}
     <tr class="tot"><td>NET PAYABLE</td><td class="r">${fmtINR(p.finalTotal)}</td></tr>
-    <tr><td>Paid</td><td class="r g b">${fmtINR(paid)}</td></tr>
-    <tr><td>Balance pending</td><td class="r ${pending > 0.009 ? 'red' : 'g'} b">${fmtINR(Math.max(0, pending))}</td></tr>
+    ${showPending ? `<tr><td>Paid</td><td class="r g b">${fmtINR(paid)}</td></tr>
+    ${pending < -0.009 ? `<tr><td>Extra paid</td><td class="r gold b">${fmtINR(-pending)}</td></tr>` : `<tr><td>Balance pending</td><td class="r ${pending > 0.009 ? 'red' : 'g'} b">${fmtINR(Math.max(0, pending))}</td></tr>`}` : ''}
   </table>
   ${payRows}
   ${p.notes ? `<div class="h">Notes</div><div>${esc(p.notes)}</div>` : ''}
@@ -81,7 +82,8 @@ export function purchaseShareText(db: Database, p: PurchaseEntry): string {
 }
 
 export function PurchaseVoucherModal({ db, entry, onClose }: { db: Database; entry: PurchaseEntry; onClose: () => void }) {
-  const html = purchaseVoucherHtml(db, entry);
+  const [showPending, setShowPending] = useState(true);
+  const html = purchaseVoucherHtml(db, entry, showPending);
   return (
     <Modal open onClose={onClose} title={`Voucher ${entry.voucherNumber}`} maxWidth="max-w-xl" footer={
       <>
@@ -94,6 +96,10 @@ export function PurchaseVoucherModal({ db, entry, onClose }: { db: Database; ent
         <Button variant="gold" onClick={() => printHtml(`Purchase Voucher ${entry.voucherNumber}`, html)}>Print / Save PDF</Button>
       </>
     }>
+      <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 mb-2">
+        <input type="checkbox" checked={showPending} onChange={e => setShowPending(e.target.checked)} />
+        Show payments and pending balance in the PDF
+      </label>
       <div className="bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} />
       <p className="text-[11px] text-gray-500 mt-2">Tip: in the print window choose “Save as PDF” to keep a PDF copy or send it on WhatsApp.</p>
     </Modal>
