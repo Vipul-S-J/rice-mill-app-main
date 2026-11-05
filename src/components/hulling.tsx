@@ -7,7 +7,7 @@ import {
 import type { HullingEntry, Payment } from '../types';
 import {
   Button, Input, Select, Card, Modal, Confirm, EmptyState, SearchBar, TotalBar, GSTPanel,
-  CalcField, QtyInput, PayBox, PhotoAttach, DateFilter, MiniBtn, toast,
+  CalcField, QtyInput, PayBox, PhotoAttach, DateFilter, MiniBtn, ExtraPaid, warnExtraPaid, toast,
 } from './ui';
 import type { DateFilterValue } from './ui';
 import {
@@ -135,6 +135,7 @@ export function HullingPage({ onPaddy }: { onPaddy?: (p: { customer: string; pho
                   <div className="font-bold text-[15px] text-gray-900">{fmtINR(h.finalTotal)}</div>
                   <div className="mt-0.5">{statusBadge(st)}</div>
                   {due > 0.009 && <div className="text-[10px] text-red-600 mt-0.5">Due {fmtINR(due)}</div>}
+                  <div className="mt-0.5"><ExtraPaid total={h.finalTotal} payments={h.payments} /></div>
                 </div>
               </div>
               <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -247,7 +248,7 @@ function HullingForm({ open, initial, onClose, onSave }: {
     if (qtyKg <= 0) { toast('Enter the quantity (Qtl / Kg)', 'error'); return; }
     if (!(Number(rate) > 0)) { toast('Enter the hulling rate per Qtl', 'error'); return; }
     const payments = withDraftPayment(existing, payAmt, payMode, payDate);
-    if (sumPayments(payments) > rt.final + 0.01) { toast('Amount paid is more than the total', 'error'); return; }
+    warnExtraPaid(round2(sumPayments(payments) - rt.final));
     saving.current = true;
     const pid = ensureParty(customer, 'customer', phone);
     onSave({
@@ -375,7 +376,6 @@ function BulkHullingModal({ open, onClose }: { open: boolean; onClose: () => voi
         if (!r.customer.trim()) errors.push('Customer name required');
         if (!(c.qtl > 0)) errors.push('Enter quantity in Qtl');
         if (!(c.rateN > 0)) errors.push('Enter a rate');
-        if (r.paid && Number(r.paid) > c.final + 0.01) errors.push('Paid is more than total');
       }
       const key = `${r.customer.trim().toLowerCase()}|${date}|${c.kg}|${c.rateN}`;
       let dup = false;

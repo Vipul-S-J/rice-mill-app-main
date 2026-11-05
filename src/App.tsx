@@ -9,6 +9,7 @@ import { PaddyDispatchPage } from './components/paddyDispatch';
 import { HuskDispatchPage } from './components/huskDispatch';
 import { VehiclePage } from './components/vehicle';
 import { ReportsPage } from './components/reports';
+import { CombinedBillPage } from './components/combinedBill';
 import { LabourPage } from './components/labour';
 import { ProductionPage } from './components/production';
 import { TradingPage } from './components/trading';
@@ -21,7 +22,7 @@ import { SalesPage } from './components/sales';
 import { InventoryPage } from './components/inventory';
 
 type MainTab = 'home' | 'hulling' | 'purchase' | 'sales' | 'trading' | 'more';
-type MorePage = 'inventory' | 'production' | 'stock' | 'parties' | 'bags' | 'dispatch' | 'vehicle' | 'husk' | 'expenses' | 'labour' | 'electricity' | 'reports' | 'outstanding' | 'backup' | 'settings' | 'cashbook';
+type MorePage = 'inventory' | 'production' | 'stock' | 'parties' | 'bags' | 'dispatch' | 'vehicle' | 'husk' | 'expenses' | 'labour' | 'electricity' | 'reports' | 'outstanding' | 'backup' | 'settings' | 'cashbook' | 'combined';
 
 const TITLES: Record<MainTab, string> = {
   home: 'SPRM Rice Mill', hulling: 'Hulling', purchase: 'Paddy Purchase', sales: 'Sales', trading: 'Trading Goods', more: 'More',
@@ -50,6 +51,7 @@ const MORE_ITEMS: { id: MorePage; label: string; icon: string; desc?: string }[]
   { id: 'electricity', label: 'Electricity', icon: '⚡', desc: 'Bills & payments' },
   { id: 'cashbook', label: 'Cashbook', icon: '📒', desc: 'Cash in / out' },
   { id: 'outstanding', label: 'Outstanding', icon: '⏰', desc: 'Receivables / Payables' },
+  { id: 'combined', label: 'Combined Bill', icon: '🧾', desc: 'Hulling + paddy + rice + bran in one bill' },
   { id: 'reports', label: 'Reports', icon: '📊', desc: 'Profit, summaries' },
   { id: 'backup', label: 'Backup / Restore', icon: '💾', desc: 'JSON / CSV export' },
   { id: 'settings', label: 'Settings', icon: '🛠', desc: 'Mill details, varieties' },
@@ -120,6 +122,7 @@ function AppShell() {
         {tab === 'more' && moreStack === 'electricity' && <ElectricityPage />}
         {tab === 'more' && moreStack === 'cashbook' && <CashbookPage />}
         {tab === 'more' && moreStack === 'outstanding' && <OutstandingPage />}
+        {tab === 'more' && moreStack === 'combined' && <CombinedBillPage />}
         {tab === 'more' && moreStack === 'reports' && <ReportsPage />}
         {tab === 'more' && moreStack === 'backup' && <BackupPage />}
         {tab === 'more' && moreStack === 'settings' && <SettingsPage />}

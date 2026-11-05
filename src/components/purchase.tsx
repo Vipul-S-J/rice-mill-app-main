@@ -7,7 +7,7 @@ import {
 import type { PurchaseEntry, PurchaseLine, BagMovement, Payment, PaddySize, BagGivenType } from '../types';
 import {
   Button, Input, Select, Card, Modal, Confirm, Badge, EmptyState, SearchBar, GSTPanel, CalcField,
-  QtyInput, PayBox, PhotoAttach, DateFilter, MiniBtn, Chips, Collapsible, toast,
+  QtyInput, PayBox, PhotoAttach, DateFilter, MiniBtn, Chips, Collapsible, ExtraPaid, warnExtraPaid, toast,
 } from './ui';
 import type { DateFilterValue } from './ui';
 import {
@@ -175,6 +175,7 @@ export function PurchasePage({ prefill, onPrefillUsed }: { prefill?: PurchasePre
                       <div className="font-bold text-[15px] text-gray-900">{fmtINR(p.finalTotal)}</div>
                       <div className="mt-0.5">{statusBadge(st)}</div>
                       {due > 0.009 && <div className="text-[10px] text-red-600 mt-0.5">Due {fmtINR(due)}</div>}
+                      <div className="mt-0.5"><ExtraPaid total={p.finalTotal} payments={p.payments} /></div>
                     </div>
                   </div>
                   <div className="text-[11px] text-gray-500 mt-1.5">• Total: <b className="text-gray-800">{fmtQtlKg(p.netKg)}</b></div>
@@ -407,7 +408,7 @@ function PurchaseForm({ open, initial, prefill, onClose, onSave }: {
     if (rt.final < 0) { toast('Bag charge is more than the paddy value', 'error'); return; }
     if ((Number(adjQty) || 0) !== 0 && !adjReason.trim()) { toast('Give a reason for the manual bag adjustment', 'error'); return; }
     const payments = withDraftPayment(existing, payAmt, payMode, payDate);
-    if (sumPayments(payments) > rt.final + 0.01) { toast('Amount paid is more than the total payable', 'error'); return; }
+    warnExtraPaid(round2(sumPayments(payments) - rt.final));
 
     saving.current = true;
     const pid = ensureParty(customer, 'supplier', phone);

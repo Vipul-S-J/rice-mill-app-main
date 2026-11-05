@@ -5,7 +5,7 @@ import type {
   StockAdjustment, CashbookEntry, Settings, Variety, Category, Payment, BagMovement, PartyType,
   TradingItem, TradingEntry
 } from './types';
-import { loadDB, saveDB, migrateDB, uid, now, nextReceipt, incrementNext, log as logAudit, round2, computeStock, nextTripNo } from './db';
+import { loadDB, saveDB, migrateDB, uid, now, nextReceipt, incrementNext, log as logAudit, round2, computeStock, nextTripNo, extraPaidMap } from './db';
 import { toast } from './components/ui';
 
 /** Finds a party by typed name (case-insensitive) or creates it - mutates the draft db inside one update. */
@@ -38,6 +38,11 @@ function reducer(state: Database, action: Action): Database {
     case 'update': {
       const copy = JSON.parse(JSON.stringify(state)) as Database;
       action.updater(copy);
+      // any entry that now has more paid than its total is written to the log (once per change)
+      const before = extraPaidMap(state), after = extraPaidMap(copy);
+      for (const [id, a] of Object.entries(after)) {
+        if (a.extra !== (before[id]?.extra || 0)) logAudit(copy, 'payment', a.module, `${a.ref}: ₹${a.extra} extra paid (paid more than the total)`, id, { extra: a.extra });
+      }
       return copy;
     }
     default:

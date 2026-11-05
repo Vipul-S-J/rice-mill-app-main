@@ -262,6 +262,17 @@ export function toast(message: string, type: 'success' | 'error' | 'info' = 'suc
   window.dispatchEvent(ev);
 }
 
+/** Over-payment is allowed: save normally, then warn (shown after the "saved" toast). */
+export function warnExtraPaid(extra: number) {
+  if (extra > 0.009) setTimeout(() => toast(`⚠ ${fmtINR(extra)} paid extra. Saved and flagged as extra paid.`, 'info'), 700);
+}
+/** Small amber tag shown on saved entries whose payments exceed the total. */
+export const ExtraPaid: React.FC<{ total: number; payments?: { amount: number }[] }> = ({ total, payments }) => {
+  const extra = round2((payments || []).reduce((s, p) => s + Number(p.amount || 0), 0) - total);
+  if (extra <= 0.009) return null;
+  return <span className="inline-block text-[10px] font-semibold text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5">{fmtINR(extra)} extra paid</span>;
+};
+
 export const ToastHost: React.FC = () => {
   const [toasts, setToasts] = useState<Toast[]>([]);
   useEffect(() => {
@@ -595,6 +606,7 @@ export const PayBox: React.FC<{
             balance > 0.009 ? 'border-red-200 bg-red-50 text-red-600' : balance < -0.009 ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-green-200 bg-green-50 text-green-700')}>
             {fmtINR(Math.abs(balance))}{balance < -0.009 ? ' over' : ''}
           </div>
+          {balance < -0.009 && <div className="text-[10px] text-amber-700">⚠ More than the total. You can still save; it is flagged as extra paid.</div>}
         </div>
         <Select label="Payment Mode" value={mode} onChange={e => onMode(e.target.value)} options={modes} />
       </div>
@@ -811,6 +823,7 @@ export const PaymentForm: React.FC<{
         <Input type="number" value={newPay.amount} onChange={e => setNewPay(p => ({ ...p, amount: Number(e.target.value) }))} wrapperClassName="col-span-1" placeholder="Amt" />
         <Select value={newPay.mode} onChange={e => setNewPay(p => ({ ...p, mode: e.target.value }))} options={modeOptions} wrapperClassName="col-span-2" />
       </div>
+      {newPay.amount > pending + 0.009 && <div className="text-[11px] text-amber-700">⚠ {fmtINR(round2(newPay.amount - pending))} more than the pending amount. You can still add it; it is flagged as extra paid.</div>}
       <Input value={newPay.reference} onChange={e => setNewPay(p => ({ ...p, reference: e.target.value }))} placeholder="Reference / notes (optional)" />
       <Button type="button" variant="secondary" size="sm" className="w-full" onClick={addPayment}>+ Add Payment</Button>
     </div>

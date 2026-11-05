@@ -792,6 +792,103 @@ export function computePartyLedger(db: Database, partyId: string): { entries: Pa
   return { entries, balance: round2(run), bagBalance: bagBal };
 }
 
+// ============ EXTRA PAID (payments above the total) ============
+/** Amount paid beyond the total (0 when not over-paid). Over-payment is allowed and simply flagged. */
+export function extraPaid(total: number, payments: Payment[] | undefined): number {
+  const e = round2(sumPayments(payments || []) - total);
+  return e > 0.009 ? e : 0;
+}
+/** Every saved entry whose payments exceed its total, keyed by entry id. */
+export function extraPaidMap(db: Database): Record<string, { module: string; ref: string; extra: number }> {
+  const out: Record<string, { module: string; ref: string; extra: number }> = {};
+  const put = (id: string, module: string, ref: string, total: number, payments?: Payment[]) => {
+    const extra = extraPaid(total, payments);
+    if (extra > 0) out[id] = { module, ref, extra };
+  };
+  for (const h of db.hulling) put(h.id, 'Hulling', h.receiptNumber, h.finalTotal, h.payments);
+  for (const p of db.purchases) put(p.id, 'Purchase', p.voucherNumber, p.finalTotal, p.payments);
+  for (const x of db.sales) put(x.id, 'Sales', x.invoiceNumber, x.finalTotal, x.payments);
+  for (const d of db.dispatches) put(d.id, 'Dispatch', d.dispatchNumber, dispatchDue(d), d.payments);
+  for (const e of db.expenses) put(e.id, 'Expenses', 'expense', e.amount, e.payments);
+  for (const l of db.labour) put(l.id, 'Labour', 'labour entry', l.totalAmount, l.payments);
+  for (const b of db.electricity) put(b.id, 'Electricity', 'bill', b.amount, b.payments);
+  return out;
+}
+
+// ============ COMBINED (UNIVERSAL) BILL ============
+/**
+ * One customer can hulling, give paddy, buy paddy / rice / bran / salt, or give bran / salt to the mill.
+ * 'charge' lines are amounts the customer owes the mill; 'credit' lines are amounts the mill owes the customer.
+ */
+export interface BillLine {
+  id: string;
+  side: 'charge' | 'credit';
+  kind: string;
+  date: string;
+  ref: string;
+  description: string;
+  amount: number;
+  /** payments already recorded against this entry (customer paid us for a charge, we paid customer for a credit) */
+  paid: number;
+  manual?: boolean;
+}
+
+export function collectBillLines(db: Database, partyId: string, from?: string, to?: string): BillLine[] {
+  const party = db.parties.find(p => p.id === partyId);
+  if (!party) return [];
+  const inR = (d: string) => (!from || d >= from) && (!to || d <= to);
+  const name = party.name.trim().toLowerCase();
+  const prod = (id: string, fallback?: string) => db.categories.find(c => c.id === id)?.name || fallback || 'Sale';
+  const out: BillLine[] = [];
+  const add = (l: BillLine) => out.push({ ...l, amount: round2(l.amount), paid: round2(l.paid) });
+
+  for (const h of db.hulling) if (h.partyId === partyId && inR(h.date))
+    add({ id: `hulling:${h.id}`, side: 'charge', kind: 'Hulling', date: h.date, ref: h.receiptNumber, description: `Hulling ${fmtQtlKg(h.quantityKg)}`, amount: h.finalTotal, paid: sumPayments(h.payments) });
+
+  for (const s of db.sales) if (s.partyId === partyId && inR(s.date)) {
+    const k = prod(s.productId, s.itemName);
+    add({ id: `sale:${s.id}`, side: 'charge', kind: `${k} bought`, date: s.date, ref: s.invoiceNumber, description: `${k} ${fmtQtlKg(s.quantityKg)}`, amount: s.finalTotal, paid: sumPayments(s.payments) });
+  }
+  for (const d of db.dispatches) if (d.partyId === partyId && inR(d.date)) {
+    const k = d.paddy ? 'Paddy' : d.husk ? 'Husk' : prod(d.productId);
+    add({ id: `dispatch:${d.id}`, side: 'charge', kind: `${k} bought`, date: d.date, ref: d.dispatchNumber, description: `${k} ${fmtQtlKg(d.netKg)}`, amount: dispatchDue(d), paid: sumPayments(d.payments) });
+  }
+  for (const t of db.trading) if (t.kind === 'sell' && (t.party || '').trim().toLowerCase() === name && inR(t.date))
+    add({ id: `trade:${t.id}`, side: 'charge', kind: `${t.itemName} bought`, date: t.date, ref: 'Trading', description: `${t.itemName} ${fmtTradeQty(t.qty, t.unit)}`, amount: t.total, paid: 0 });
+
+  for (const p of db.purchases) if (p.partyId === partyId && inR(p.date))
+    add({ id: `purchase:${p.id}`, side: 'credit', kind: 'Paddy given', date: p.date, ref: p.voucherNumber, description: `Paddy given ${fmtQtlKg(p.netKg)}`, amount: p.finalTotal, paid: sumPayments(p.payments) });
+  for (const t of db.trading) if (t.kind === 'buy' && (t.party || '').trim().toLowerCase() === name && inR(t.date))
+    add({ id: `trade:${t.id}`, side: 'credit', kind: `${t.itemName} given`, date: t.date, ref: 'Trading', description: `${t.itemName} given ${fmtTradeQty(t.qty, t.unit)}`, amount: t.total, paid: 0 });
+
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.ref.localeCompare(b.ref));
+}
+
+export interface BillSummary {
+  charges: number;       // customer owes us (before set-off)
+  credits: number;       // we owe customer (before set-off)
+  netSide: 'customer' | 'mill' | 'even';  // who pays after set-off, before any payments
+  net: number;           // always positive (0 when even)
+  paidByCustomer: number;
+  paidToCustomer: number;
+  balanceSide: 'customer' | 'mill' | 'even';  // who still has to pay, after payments already made
+  balance: number;       // always positive (0 when settled)
+}
+/** Set-off: charges minus credits, always shown as a positive amount with the paying side named. */
+export function summarizeBill(lines: BillLine[]): BillSummary {
+  const sum = (xs: BillLine[], f: (l: BillLine) => number) => round2(xs.reduce((s, l) => s + f(l), 0));
+  const ch = lines.filter(l => l.side === 'charge'), cr = lines.filter(l => l.side === 'credit');
+  const charges = sum(ch, l => l.amount), credits = sum(cr, l => l.amount);
+  const paidByCustomer = sum(ch, l => l.paid), paidToCustomer = sum(cr, l => l.paid);
+  const side = (v: number): 'customer' | 'mill' | 'even' => (v > 0.009 ? 'customer' : v < -0.009 ? 'mill' : 'even');
+  const rawNet = round2(charges - credits);
+  const rawBal = round2(charges - paidByCustomer - (credits - paidToCustomer));
+  return {
+    charges, credits, netSide: side(rawNet), net: Math.abs(rawNet) > 0.009 ? Math.abs(rawNet) : 0,
+    paidByCustomer, paidToCustomer, balanceSide: side(rawBal), balance: Math.abs(rawBal) > 0.009 ? Math.abs(rawBal) : 0,
+  };
+}
+
 export function allPartyBalances(db: Database): Record<string, number> {
   const map: Record<string, number> = {};
   for (const p of db.parties) map[p.id] = computePartyLedger(db, p.id).balance;
