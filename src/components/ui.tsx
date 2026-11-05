@@ -9,23 +9,23 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   loading?: boolean;
 }> = ({ variant = 'primary', size = 'md', loading, className, children, disabled, ...rest }) => {
   const variants: Record<string, string> = {
-    primary: 'bg-forest-700 text-white hover:bg-forest-800 active:bg-forest-900 shadow-sm',
-    secondary: 'bg-white text-forest-800 border border-forest-200 hover:bg-forest-50',
+    primary: 'bg-forest-700 text-white hover:bg-forest-800 active:bg-forest-900 shadow-sm shadow-forest-700/25',
+    secondary: 'bg-white text-forest-800 border border-gray-200 hover:bg-forest-50 hover:border-forest-200',
     ghost: 'bg-transparent text-forest-800 hover:bg-forest-50',
     danger: 'bg-red-600 text-white hover:bg-red-700 shadow-sm',
     gold: 'bg-gold-500 text-white hover:bg-gold-600 shadow-sm',
     success: 'bg-green-600 text-white hover:bg-green-700 shadow-sm',
   };
   const sizes: Record<string, string> = {
-    sm: 'px-2.5 py-1.5 text-xs rounded-md',
-    md: 'px-3 py-2 text-sm rounded-lg',
-    lg: 'px-4 py-2.5 text-base rounded-lg',
+    sm: 'px-3 py-1.5 text-xs rounded-lg',
+    md: 'px-4 py-2.5 text-sm rounded-xl',
+    lg: 'px-5 py-3 text-base rounded-xl',
   };
   return (
     <button
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center gap-1.5 font-medium transition-colors select-none disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center gap-1.5 font-semibold transition-all select-none active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest-300 disabled:opacity-50 disabled:cursor-not-allowed',
         variants[variant],
         sizes[size],
         className
@@ -43,12 +43,12 @@ export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement> & {
   label?: string; suffix?: string; error?: string; wrapperClassName?: string;
 }> = ({ label, suffix, error, wrapperClassName, className, ...rest }) => (
   <div className={cn('flex flex-col gap-1', wrapperClassName)}>
-    {label && <label className="text-xs font-medium text-gray-700">{label}</label>}
+    {label && <label className="text-xs font-semibold text-gray-600">{label}</label>}
     <div className="relative">
       <input
         className={cn(
-          'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition-colors',
-          'focus:border-forest-500 focus:ring-2 focus:ring-forest-100',
+          'w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition-all',
+          'focus:border-forest-500 focus:ring-4 focus:ring-forest-100',
           'placeholder:text-gray-400 disabled:bg-gray-50',
           error ? 'border-red-400' : '',
           suffix ? 'pr-10' : '',
@@ -69,11 +69,11 @@ export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & {
   const opts = options.map(o => typeof o === 'string' ? { value: o, label: o } : o);
   return (
     <div className={cn('flex flex-col gap-1', wrapperClassName)}>
-      {label && <label className="text-xs font-medium text-gray-700">{label}</label>}
+      {label && <label className="text-xs font-semibold text-gray-600">{label}</label>}
       <select
         className={cn(
-          'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition-colors',
-          'focus:border-forest-500 focus:ring-2 focus:ring-forest-100 appearance-none bg-no-repeat bg-right pr-8',
+          'w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition-all',
+          'focus:border-forest-500 focus:ring-4 focus:ring-forest-100 appearance-none bg-no-repeat bg-right pr-8',
           error ? 'border-red-400' : '',
           className
         )}
@@ -90,11 +90,11 @@ export const Select: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & {
 // ============ Textarea ============
 export const Textarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label?: string }> = ({ label, className, ...rest }) => (
   <div className="flex flex-col gap-1">
-    {label && <label className="text-xs font-medium text-gray-700">{label}</label>}
+    {label && <label className="text-xs font-semibold text-gray-600">{label}</label>}
     <textarea
       className={cn(
-        'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition-colors',
-        'focus:border-forest-500 focus:ring-2 focus:ring-forest-100 resize-y min-h-[60px]',
+        'w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none transition-all',
+        'focus:border-forest-500 focus:ring-4 focus:ring-forest-100 resize-y min-h-[60px]',
         className
       )}
       {...rest}
@@ -105,7 +105,7 @@ export const Textarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement
 // ============ Card ============
 export const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className, children, ...rest }) => (
   <div
-    className={cn('bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden', className)}
+    className={cn('bg-white rounded-2xl shadow-soft border border-gray-100 overflow-hidden', className)}
     {...rest}
   >
     {children}
@@ -132,15 +132,15 @@ export const KPICard: React.FC<{
     <button
       onClick={onClick}
       className={cn(
-        'bg-white rounded-xl shadow-sm border border-gray-100 p-3 text-left w-full',
-        'hover:shadow-md hover:border-forest-200 active:scale-[0.98] transition-all',
+        'bg-white rounded-2xl shadow-soft border border-gray-100 p-3.5 text-left w-full',
+        'hover:border-forest-200 active:scale-[0.98] transition-all',
         onClick ? 'cursor-pointer' : 'cursor-default'
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] font-medium text-gray-500 uppercase tracking-wide truncate">{label}</div>
-          <div className={cn('text-lg font-bold mt-0.5 truncate', tones[tone])}>{value}</div>
+          <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider truncate">{label}</div>
+          <div className={cn('text-xl font-extrabold tracking-tight mt-0.5 truncate', tones[tone])}>{value}</div>
           {sub && <div className="text-[11px] text-gray-500 mt-0.5 truncate">{sub}</div>}
         </div>
         {icon && <div className="text-forest-500 shrink-0 mt-0.5">{icon}</div>}
@@ -167,22 +167,23 @@ export const Modal: React.FC<{
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/45 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div
         className={cn(
-          'bg-white w-full rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col max-h-[92vh]',
+          'bg-white w-full rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[92vh]',
           maxWidth
         )}
         onClick={e => e.stopPropagation()}
       >
+        <div className="sm:hidden mx-auto mt-2 h-1 w-10 rounded-full bg-gray-200 shrink-0" />
         {title && (
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
-            <h3 className="font-semibold text-gray-900 text-base">{title}</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none w-8 h-8 flex items-center justify-center">×</button>
+          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 shrink-0">
+            <h3 className="font-bold text-gray-900 text-base tracking-tight">{title}</h3>
+            <button onClick={onClose} aria-label="Close" className="text-gray-500 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-full text-lg leading-none w-8 h-8 flex items-center justify-center transition-colors">×</button>
           </div>
         )}
-        <div className="p-4 overflow-y-auto flex-1">{children}</div>
-        {footer && <div className="px-4 py-3 border-t border-gray-100 shrink-0 flex justify-end gap-2">{footer}</div>}
+        <div className="p-5 overflow-y-auto flex-1">{children}</div>
+        {footer && <div className="px-5 py-3 border-t border-gray-100 shrink-0 flex justify-end gap-2">{footer}</div>}
       </div>
     </div>
   );
@@ -219,7 +220,7 @@ export const Badge: React.FC<{ children: React.ReactNode; tone?: 'green' | 'red'
     gold: 'bg-amber-50 text-amber-700 border-amber-200',
   };
   return (
-    <span className={cn('inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border', tones[tone])}>
+    <span className={cn('inline-flex items-center px-2 py-0.5 text-[10px] font-semibold rounded-full border', tones[tone])}>
       {children}
     </span>
   );
@@ -243,8 +244,8 @@ export const Tabs: React.FC<{ tabs: { id: string; label: string; count?: number 
         key={t.id}
         onClick={() => onChange(t.id)}
         className={cn(
-          'shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap',
-          active === t.id ? 'bg-forest-700 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
+          'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap',
+          active === t.id ? 'bg-forest-700 text-white shadow-sm shadow-forest-700/25' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
         )}
       >
         {t.label}{t.count !== undefined && <span className="ml-1 opacity-70">({fmtNumber(t.count, 0)})</span>}
@@ -287,12 +288,12 @@ export const ToastHost: React.FC = () => {
     return () => window.removeEventListener('sprm-toast', handler);
   }, []);
   return (
-    <div className="fixed bottom-20 left-0 right-0 z-[100] flex flex-col items-center gap-2 pointer-events-none px-4">
+    <div className="fixed bottom-24 left-0 right-0 z-[100] flex flex-col items-center gap-2 pointer-events-none px-4">
       {toasts.map(t => (
         <div key={t.id} className={cn(
-          'px-4 py-2 rounded-full shadow-lg text-sm font-medium animate-fade-in',
+          'px-4 py-2.5 rounded-2xl shadow-xl text-sm font-semibold animate-fade-in backdrop-blur',
           t.type === 'success' ? 'bg-forest-700 text-white' :
-          t.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'
+          t.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'
         )}>
           {t.message}
         </div>
@@ -356,8 +357,8 @@ export const DateRangePresets: React.FC<{
           key={p.id}
           onClick={() => onChange(p.id)}
           className={cn(
-            'px-2.5 py-1 text-[11px] rounded-full font-medium transition-colors',
-            value === p.id ? 'bg-forest-700 text-white' : 'bg-white border border-gray-200 text-gray-600'
+            'px-3 py-1 text-[11px] rounded-full font-semibold transition-all',
+            value === p.id ? 'bg-forest-700 text-white shadow-sm shadow-forest-700/25' : 'bg-white border border-gray-200 text-gray-600'
           )}
         >{p.label}</button>
       ))}
@@ -397,7 +398,7 @@ export const CalcField: React.FC<{
       }}
       className={cn(
         'w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none',
-        'focus:border-forest-500 focus:ring-2 focus:ring-forest-100',
+        'focus:border-forest-500 focus:ring-4 focus:ring-forest-100',
         manual ? 'border-gold-400 bg-amber-50/30' : 'border-gray-200',
         suffix ? 'pr-10' : ''
       )}
@@ -442,8 +443,8 @@ export const Chips: React.FC<{
         type="button"
         onClick={() => onChange(o.value)}
         className={cn(
-          'px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors',
-          value === o.value ? 'bg-forest-700 text-white border-forest-700' : 'bg-white text-gray-600 border-gray-200'
+          'px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all',
+          value === o.value ? 'bg-forest-700 text-white border-forest-700 shadow-sm shadow-forest-700/25' : 'bg-white text-gray-600 border-gray-200'
         )}
       >{o.label}</button>
     ))}
@@ -500,7 +501,7 @@ export const QtyInput: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valueKg]);
   const emit = (qs: string, ks: string) => onChange(round2((Number(qs) || 0) * 100 + (Number(ks) || 0)));
-  const cls = 'w-full min-w-0 rounded-lg border border-gray-200 bg-white px-1.5 py-2 text-sm text-center outline-none focus:border-forest-500 focus:ring-2 focus:ring-forest-100';
+  const cls = 'w-full min-w-0 rounded-lg border border-gray-200 bg-white px-1.5 py-2 text-sm text-center outline-none focus:border-forest-500 focus:ring-4 focus:ring-forest-100';
   return (
     <div className="flex flex-col gap-1 min-w-0">
       <label className="text-xs font-medium text-gray-700 truncate">{label}</label>
@@ -731,14 +732,14 @@ export const SearchBar: React.FC<{ value: string; onChange: (v: string) => void;
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full pl-9 pr-3 py-2 rounded-lg bg-white border border-gray-200 text-sm outline-none focus:border-forest-400"
+      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white border border-gray-200 text-sm outline-none transition-all focus:border-forest-500 focus:ring-4 focus:ring-forest-100"
     />
   </div>
 );
 
 // Total bar at bottom of lists
 export const TotalBar: React.FC<{ items: { label: string; value: string; tone?: 'green' | 'red' | 'default' | 'gold' }[] }> = ({ items }) => (
-  <div className="bg-forest-700 text-white px-3 py-2 flex items-center justify-between gap-2 flex-wrap rounded-t-xl mt-2">
+  <div className="bg-forest-800 text-white px-4 py-2.5 flex items-center justify-between gap-2 flex-wrap rounded-t-2xl mt-2 shadow-lg">
     {items.map((it, i) => (
       <div key={i} className="text-xs">
         <span className="text-forest-200">{it.label}: </span>

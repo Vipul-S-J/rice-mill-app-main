@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { cn } from '../utils/cn';
 import { printHtml, shareText } from '../utils/print';
 import { InventoryPage } from './inventory';
+import { THEMES, applyTheme, getTheme } from '../theme';
+import type { ThemeId } from '../theme';
 import { useDB } from '../context';
 import {
   fmtINR, fmtQty, fmtQtlKg, fmtNumber, fmtDate, today, kgToQtl,
@@ -1505,9 +1507,22 @@ export function SettingsPage() {
     bran: String(db.settings.minStockQtl?.bran || 0), husk: String(db.settings.minStockQtl?.husk || 0),
   });
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [theme, setTheme] = useState<ThemeId>(getTheme());
 
   return (
     <div className="p-3 space-y-4 pb-6">
+      <Card className="p-3 space-y-2">
+        <h3 className="font-semibold text-forest-800">Appearance</h3>
+        <p className="text-[11px] text-gray-500">Pick the colour theme of the app. It is saved on this device.</p>
+        <div className="flex gap-3 flex-wrap">
+          {THEMES.map(t => (
+            <button key={t.id} type="button" onClick={() => { applyTheme(t.id); setTheme(t.id); }} className="flex flex-col items-center gap-1 active:scale-95 transition-transform" aria-label={`${t.label} theme`}>
+              <span className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white text-lg ring-offset-2 ${theme === t.id ? 'ring-2 ring-gray-800' : ''}`} style={{ background: t.swatch }}>{theme === t.id ? '✓' : ''}</span>
+              <span className="text-[10px] font-semibold text-gray-600">{t.label}</span>
+            </button>
+          ))}
+        </div>
+      </Card>
       <Card className="p-3 space-y-2">
         <h3 className="font-semibold text-forest-800">Mill Identity</h3>
         <Input label="Mill Name" value={millName} onChange={e => setMillName(e.target.value)} />
