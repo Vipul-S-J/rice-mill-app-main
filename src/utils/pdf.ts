@@ -114,3 +114,31 @@ export async function savePdf(title: string, filename: string, bodyHtml: string)
   printHtml(title, bodyHtml); // browsers without a save dialog: the print dialog offers "Save as PDF" with a location prompt
   return 'printed';
 }
+
+/** Asks where to save any file (CSV, JSON, ...). Android save dialog / desktop save dialog / plain download as the last resort. */
+export async function saveFile(filename: string, mimeType: string, blob: Blob): Promise<'saved' | 'downloaded' | 'cancelled'> {
+  if (isNative()) {
+    try {
+      await FileSave.saveFile({ filename, mimeType, data: await blobToBase64(blob) });
+      return 'saved';
+    } catch (e: any) {
+      if (/cancel/i.test(String(e?.message))) return 'cancelled';
+      throw e;
+    }
+  }
+  const w = window as any;
+  if (typeof w.showSaveFilePicker === 'function') {
+    try {
+      const ext = filename.includes('.') ? '.' + filename.split('.').pop() : '';
+      const handle = await w.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'File', accept: { [mimeType]: ext ? [ext] : [] } }] });
+      const wr = await handle.createWritable();
+      await wr.write(blob); await wr.close();
+      return 'saved';
+    } catch (e: any) {
+      if (e?.name === 'AbortError') return 'cancelled';
+      throw e;
+    }
+  }
+  downloadBlob(blob, filename);
+  return 'downloaded';
+}

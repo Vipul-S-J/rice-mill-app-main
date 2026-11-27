@@ -2,7 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { cn } from '../utils/cn';
 import { useDB } from '../context';
 import { fmtINR, fmtNumber, fmtDate, fmtTradeQty, today, inRange } from '../db';
-import { Card, KPICard, Input, Select, Tabs } from './ui';
+import { Button, Card, KPICard, Input, Select, toast } from './ui';
+import { saveFile } from '../utils/pdf';
+import { GROUPS, TITLE_OF, buildTable, dailyClosing, formatCell, toCsv } from '../reportData';
+import type { ReportId } from '../reportData';
 import { ReportsOverview, partyName } from './pages';
 import { tripOf } from './vehicle';
 
@@ -11,15 +14,6 @@ type Range = { start: string; end: string };
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const parse = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-const PRESETS: { id: string; label: string; get: () => Range }[] = [
-  { id: 'today', label: 'Today', get: () => ({ start: today(), end: today() }) },
-  { id: '7d', label: '7 Days', get: () => { const d = new Date(); d.setDate(d.getDate() - 6); return { start: iso(d), end: today() }; } },
-  { id: 'month', label: 'This Month', get: () => { const n = new Date(); return { start: iso(new Date(n.getFullYear(), n.getMonth(), 1)), end: today() }; } },
-  { id: 'lastmonth', label: 'Last Month', get: () => { const n = new Date(); return { start: iso(new Date(n.getFullYear(), n.getMonth() - 1, 1)), end: iso(new Date(n.getFullYear(), n.getMonth(), 0)) }; } },
-  { id: 'fy', label: 'This FY', get: () => { const n = new Date(); const y = n.getMonth() >= 3 ? n.getFullYear() : n.getFullYear() - 1; return { start: `${y}-04-01`, end: today() }; } },
-  { id: 'all', label: 'All', get: () => ({ start: '', end: '' }) },
-];
 
 const makeInR = (r: Range) => (d: string) => inRange(d, { preset: 'custom', start: r.start, end: r.end });
 const qtl = (kg: number) => `${fmtNumber(kg / 100, 2)} Qtl`;
@@ -498,56 +492,168 @@ function HuskDispatchReport({ range }: { range: Range }) {
 }
 
 // ============ PAGE ============
-const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'hulling', label: 'Hulling' },
-  { id: 'paddy', label: 'Paddy' },
-  { id: 'sales', label: 'Sales' },
-  { id: 'trading', label: 'Trading' },
-  { id: 'vehicle', label: 'Vehicle' },
-  { id: 'paddyDisp', label: 'Paddy Dispatch' },
-  { id: 'huskDisp', label: 'Husk Dispatch' },
+const PRESETS: { id: string; label: string; get: () => Range }[] = [
+  { id: 'today', label: 'Today', get: () => ({ start: today(), end: today() }) },
+  { id: 'week', label: 'This Week', get: () => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return { start: iso(d), end: today() }; } },
+  { id: 'month', label: 'This Month', get: () => { const n = new Date(); return { start: iso(new Date(n.getFullYear(), n.getMonth(), 1)), end: today() }; } },
+  { id: 'year', label: 'This Year', get: () => ({ start: `${new Date().getFullYear()}-01-01`, end: today() }) },
+  { id: 'all', label: 'All Time', get: () => ({ start: '', end: '' }) },
 ];
 
+function DailyView({ range }: { range: Range }) {
+  const { db } = useDB();
+  const d = useMemo(() => dailyClosing(db, range), [db, range.start, range.end]);
+  const Row = ({ l, v, tone }: { l: string; v: number; tone?: string }) => (
+    <div className="flex items-baseline justify-between gap-2 border-b border-gray-100 py-2 text-sm"><span className="text-gray-600">{l}</span><b className={tone || 'text-forest-800'}>{fmtINR(v)}</b></div>
+  );
+  return (
+    <div className="space-y-4">
+      <section>
+        <h4 className="text-[11px] font-extrabold tracking-wider text-forest-700 uppercase mb-1">Financial Summary</h4>
+        <div className="grid grid-cols-2 gap-x-4">{d.income.map(i => <Row key={i.label} l={i.label} v={i.value} />)}</div>
+        <div className="flex items-center justify-between pt-3 text-base"><b>Total Income</b><b className="text-forest-700">{fmtINR(d.totalIncome)}</b></div>
+      </section>
+      <section>
+        <h4 className="text-[11px] font-extrabold tracking-wider text-forest-700 uppercase mb-1">Expenses Breakdown</h4>
+        <div className="grid grid-cols-2 gap-x-4">{d.expenses.map(i => <Row key={i.label} l={i.label} v={i.value} tone="text-amber-700" />)}</div>
+        <div className="flex items-center justify-between pt-3 text-base"><b>Total Expenses</b><b className="text-red-600">{fmtINR(d.totalExpenses)}</b></div>
+      </section>
+      <div className={cn('rounded-2xl px-4 py-3 flex items-center justify-between', d.net >= 0 ? 'bg-forest-100 text-forest-800' : 'bg-red-50 text-red-700')}>
+        <span className="font-bold">Net Profit</span><span className="text-2xl font-extrabold">{fmtINR(d.net)}</span>
+      </div>
+      <section>
+        <h4 className="text-[11px] font-extrabold tracking-wider text-forest-700 uppercase mb-2">Stock Summary</h4>
+        <div className="grid grid-cols-2 gap-2">
+          {d.stockMoves.map(m => (
+            <div key={m.label} className={cn('rounded-xl p-3', m.tone === 'in' ? 'bg-forest-50' : 'bg-rose-50')}>
+              <div className="text-[11px] text-gray-500">{m.label}</div>
+              <div className={cn('text-base font-extrabold', m.tone === 'in' ? 'text-forest-700' : 'text-rose-700')}>{m.kg > 0 ? (m.tone === 'in' ? '+' : '-') : ''}{fmtNumber(m.kg / 100, 2)} Qtl</div>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-4 gap-1.5 mt-2">
+          {d.current.map(c => (
+            <div key={c.label} className="rounded-xl bg-gray-50 border border-gray-100 p-2 text-center">
+              <div className="text-[9px] text-gray-500 leading-tight">{c.label}</div>
+              <div className="text-[13px] font-extrabold text-forest-800 leading-tight mt-0.5">{fmtNumber(c.kg / 100, 2)} <span className="text-[9px] font-semibold">Qtl</span></div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TableView({ id, range }: { id: ReportId; range: Range }) {
+  const { db } = useDB();
+  const t = useMemo(() => buildTable(id, db, range), [db, id, range.start, range.end]);
+  if (t.rows.length === 0) return <Empty />;
+  const align = (k?: string) => (k === 'inr' || k === 'qtl' || k === 'num' ? 'text-right' : 'text-left');
+  return (
+    <div className="overflow-x-auto -mx-1">
+      <table className="w-full text-xs min-w-max">
+        <thead><tr>{t.columns.map(c => <th key={c.label} className={cn('px-2 py-2 font-bold text-[10px] uppercase tracking-wide text-forest-700 bg-forest-50 whitespace-nowrap', align(c.kind))}>{c.label}</th>)}</tr></thead>
+        <tbody>
+          {t.rows.map((r, i) => (
+            <tr key={i} className="border-b border-gray-100">{r.map((v, j) => <td key={j} className={cn('px-2 py-1.5 whitespace-nowrap', align(t.columns[j]?.kind))}>{formatCell(v, t.columns[j]?.kind)}</td>)}</tr>
+          ))}
+          {t.totals && <tr className="bg-forest-50 font-bold">{t.totals.map((v, j) => <td key={j} className={cn('px-2 py-2 whitespace-nowrap', align(t.columns[j]?.kind))}>{typeof v === 'number' ? formatCell(v, t.columns[j]?.kind) : v}</td>)}</tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ReportBody({ id, range }: { id: ReportId; range: Range }) {
+  switch (id) {
+    case 'daily': return <DailyView range={range} />;
+    case 'profit': return <ReportsOverview range={range} />;
+    case 'hulling': return <HullingReport range={range} />;
+    case 'paddy': return <PaddyReport range={range} />;
+    case 'sales': return <SalesReport range={range} />;
+    case 'tradingSales': return <TradingReport range={range} />;
+    case 'vehicle': return <VehicleReport range={range} />;
+    case 'paddyDispatch': return <PaddyDispatchReport range={range} />;
+    case 'huskDispatch': return <HuskDispatchReport range={range} />;
+    default: return <TableView id={id} range={range} />;
+  }
+}
+
 export function ReportsPage() {
-  const [tab, setTab] = useState('overview');
+  const { db } = useDB();
   const [preset, setPreset] = useState('month');
   const [range, setRange] = useState<Range>(PRESETS[2].get());
+  const [sel, setSel] = useState<ReportId>('daily');
+  const [shown, setShown] = useState<{ id: ReportId; range: Range } | null>(null);
   const pick = (id: string) => { setPreset(id); setRange(PRESETS.find(p => p.id === id)!.get()); };
   const edit = (patch: Partial<Range>) => { setPreset('custom'); setRange(r => ({ ...r, ...patch })); };
   const invalid = !!range.start && !!range.end && range.start > range.end;
+  const generate = () => { if (invalid) { toast('From date is after To date', 'error'); return; } setShown({ id: sel, range }); };
+  const exportCsv = async () => {
+    if (invalid) { toast('From date is after To date', 'error'); return; }
+    const t = buildTable(sel, db, range);
+    if (t.rows.length === 0) { toast('Nothing to export for these dates', 'error'); return; }
+    const name = `${TITLE_OF[sel].replace(/[^\w]+/g, '_')}_${range.start || 'start'}_to_${range.end || 'latest'}.csv`;
+    try {
+      const r = await saveFile(name, 'text/csv', new Blob([toCsv(t)], { type: 'text/csv;charset=utf-8' }));
+      if (r === 'saved') toast('CSV saved to the location you chose'); else if (r === 'downloaded') toast('CSV downloaded');
+    } catch (e: any) { toast(`Could not save the CSV: ${e?.message || 'unknown error'}`, 'error'); }
+  };
+  const periodText = shown ? `${shown.range.start ? fmtDate(shown.range.start) : 'Beginning'} to ${shown.range.end ? fmtDate(shown.range.end) : 'Latest'}` : '';
 
   return (
     <div className="p-3 space-y-3 pb-6">
-      <Card className="p-3 space-y-2">
-        <div className="flex gap-1 overflow-x-auto no-scrollbar">
-          {PRESETS.map(p => (
-            <button key={p.id} onClick={() => pick(p.id)}
-              className={cn('shrink-0 px-2.5 py-1 text-[11px] rounded-full font-medium whitespace-nowrap transition-colors',
-                preset === p.id ? 'bg-forest-700 text-white' : 'bg-white border border-gray-200 text-gray-600')}>{p.label}</button>
-          ))}
-        </div>
+      <Card className="p-4 space-y-3">
+        <div className="flex items-center gap-2 text-forest-800 font-bold"><span className="text-lg">🗓</span> Date Range</div>
         <div className="grid grid-cols-2 gap-2">
           <Input label="From" type="date" value={range.start} max={range.end || undefined} onChange={e => edit({ start: e.target.value })} />
           <Input label="To" type="date" value={range.end} min={range.start || undefined} onChange={e => edit({ end: e.target.value })} />
         </div>
-        <div className={cn('text-[11px]', invalid ? 'text-red-600' : 'text-gray-500')}>
-          {invalid ? 'From date is after To date.' : range.start || range.end
-            ? `${range.start ? fmtDate(range.start) : 'Beginning'} – ${range.end ? fmtDate(range.end) : 'Latest'}` : 'All dates'}
+        <div className="flex gap-1.5 flex-wrap">
+          {PRESETS.map(p => (
+            <button key={p.id} onClick={() => pick(p.id)}
+              className={cn('px-3 py-1.5 text-xs rounded-full font-semibold transition-all', preset === p.id ? 'bg-forest-700 text-white shadow-sm shadow-forest-700/25' : 'bg-white border border-gray-200 text-forest-800')}>{p.label}</button>
+          ))}
         </div>
+        {invalid && <div className="text-[11px] text-red-600">From date is after To date.</div>}
       </Card>
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
-      {invalid ? null : (
-        <>
-          {tab === 'overview' && <ReportsOverview range={range} />}
-          {tab === 'hulling' && <HullingReport range={range} />}
-          {tab === 'paddy' && <PaddyReport range={range} />}
-          {tab === 'sales' && <SalesReport range={range} />}
-          {tab === 'trading' && <TradingReport range={range} />}
-          {tab === 'vehicle' && <VehicleReport range={range} />}
-          {tab === 'paddyDisp' && <PaddyDispatchReport range={range} />}
-          {tab === 'huskDisp' && <HuskDispatchReport range={range} />}
-        </>
+
+      {GROUPS.map(g => (
+        <section key={g.id}>
+          <div className="flex items-center gap-2 px-1 mb-2">
+            <span className="text-sm">{g.icon}</span>
+            <h3 className="text-[11px] font-extrabold tracking-[0.14em] text-gray-500 uppercase">{g.label}</h3>
+            <span className="flex-1 h-px bg-gray-200" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {g.tiles.map(t => (
+              <button key={t.id} onClick={() => setSel(t.id)} aria-pressed={sel === t.id}
+                className={cn('text-left rounded-2xl border p-3 transition-all active:scale-[0.98] bg-white',
+                  sel === t.id ? 'border-forest-500 bg-forest-50 ring-2 ring-forest-200 shadow-soft' : 'border-gray-200')}>
+                <div className="text-xl leading-none">{t.icon}</div>
+                <div className="mt-1.5 text-[13px] font-bold text-gray-900 leading-tight">{t.title}</div>
+                <div className="text-[11px] text-gray-500 leading-tight mt-0.5">{t.sub}</div>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <div className="flex gap-2">
+        <Button className="flex-1" size="lg" onClick={generate}>📊 Generate Report</Button>
+        <Button variant="secondary" size="lg" onClick={exportCsv}>⬇ CSV</Button>
+      </div>
+
+      {shown ? (
+        <Card>
+          <div className="bg-gradient-to-br from-forest-900 to-forest-700 text-white px-4 py-4">
+            <div className="text-lg font-extrabold leading-tight">{db.settings.millName}</div>
+            <div className="text-xs text-forest-100 mt-0.5">{TITLE_OF[shown.id]} · {periodText}</div>
+          </div>
+          <div className="p-4"><ReportBody id={shown.id} range={shown.range} /></div>
+        </Card>
+      ) : (
+        <Card className="p-6 text-center text-xs text-gray-500">Pick a report above, then tap <b>Generate Report</b>.</Card>
       )}
     </div>
   );
