@@ -7,6 +7,7 @@ import type { Database, StockAdjustment } from '../types';
 import type { StockLedger } from '../db';
 import { Button, Input, Select, Modal, Chips, QtyInput, toast } from './ui';
 import { WheatIcon } from './Welcome';
+import { staffWagesIn } from '../staff';
 import { varietyName } from './pages';
 
 type Mode = 'day' | 'week' | 'month' | 'year' | 'custom';
@@ -123,6 +124,7 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
     const expenses =
       db.expenses.filter(e => !e.isPersonal && inP(e.date)).reduce((s, e) => s + e.amount, 0) +
       db.labour.filter(l => inP(l.date)).reduce((s, l) => s + l.totalAmount, 0) +
+      staffWagesIn(db, range.start, range.end) +
       db.electricity.filter(e => inP(e.billDate)).reduce((s, e) => s + e.amount, 0);
 
     // dispatch P&L (recorded revenue & costs; buy cost is an estimate at average purchase cost)

@@ -1,5 +1,6 @@
 /** Pure report calculations (no UI). Each report is a table so the screen and the CSV export always agree. */
 import type { Database } from './types';
+import { staffWagesIn } from './staff';
 import { computeStock, computePartyLedger, dispatchDue, fmtDate, round2, sumPayments, tradingPL, fmtTradeQty } from './db';
 
 export type Range = { start: string; end: string };
@@ -74,7 +75,7 @@ export function dailyClosing(db: Database, r: Range): DailyClosing {
     { label: 'Misc Sales', value: misc }, { label: 'Trading Sales', value: trading },
   ];
   const expenses = [
-    { label: 'Labour Wages', value: sum(db.labour.filter(l => ok(l.date)).map(l => l.totalAmount)) },
+    { label: 'Labour Wages', value: round2(sum(db.labour.filter(l => ok(l.date)).map(l => l.totalAmount)) + staffWagesIn(db, r.start, r.end)) },
     { label: 'Electricity', value: sum(db.electricity.filter(e => ok(e.billDate)).map(e => e.amount)) },
     { label: 'Other Expenses', value: sum(db.expenses.filter(e => !e.isPersonal && ok(e.date)).map(e => e.amount)) },
   ];

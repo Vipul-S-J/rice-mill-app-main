@@ -13,7 +13,7 @@ import { CombinedBillPage } from './components/combinedBill';
 import { LogsPage } from './components/logs';
 import { BackupPage } from './components/backup';
 import { AutoBackupRunner } from './components/backupAuto';
-import { LabourPage } from './components/labour';
+import { LabourStaffPage } from './components/labourStaff';
 import { ProductionPage } from './components/production';
 import { TradingPage } from './components/trading';
 import { HullingPage } from './components/hulling';
@@ -50,7 +50,7 @@ const MORE_ITEMS: { id: MorePage; label: string; icon: string; desc?: string }[]
   { id: 'vehicle', label: 'Vehicle', icon: '🚚', desc: 'Trips, drivers, transport charges' },
   { id: 'dispatch', label: 'Paddy Dispatch', icon: '🚛', desc: 'FIFO / manual lots, P&L' },
   { id: 'expenses', label: 'Expenses', icon: '💸', desc: 'Business & personal' },
-  { id: 'labour', label: 'Labour', icon: '👷', desc: 'Wages & payments' },
+  { id: 'labour', label: 'Labour & Staff', icon: '👷', desc: 'Staff, attendance, payroll, wages' },
   { id: 'electricity', label: 'Electricity', icon: '⚡', desc: 'Bills & payments' },
   { id: 'cashbook', label: 'Cashbook', icon: '📒', desc: 'Cash in / out' },
   { id: 'outstanding', label: 'Outstanding', icon: '⏰', desc: 'Receivables / Payables' },
@@ -135,7 +135,7 @@ function AppShell() {
         {tab === 'more' && moreStack === 'husk' && <HuskDispatchPage />}
         {tab === 'more' && moreStack === 'dispatch' && <PaddyDispatchPage />}
         {tab === 'more' && moreStack === 'expenses' && <ExpensesPage />}
-        {tab === 'more' && moreStack === 'labour' && <LabourPage />}
+        {tab === 'more' && moreStack === 'labour' && <LabourStaffPage />}
         {tab === 'more' && moreStack === 'electricity' && <ElectricityPage />}
         {tab === 'more' && moreStack === 'cashbook' && <CashbookPage />}
         {tab === 'more' && moreStack === 'outstanding' && <OutstandingPage />}

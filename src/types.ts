@@ -13,6 +13,8 @@ export interface StaffProfile {
   /** overtime rate per hour; blank = worked out from the wage rate */
   otRate?: number;
   remarks?: string;
+  /** left the job / not working now (the person's other records, e.g. as a customer, are not touched) */
+  inactive?: boolean;
 }
 export interface Party {
   id: string;
