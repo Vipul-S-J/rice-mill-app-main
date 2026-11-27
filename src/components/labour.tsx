@@ -44,7 +44,7 @@ export function LabourPage() {
 
   // Search & filters for bottom list
   const [search, setSearch] = useState('');
-  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'all' });
+  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'today' });
   const [sort, setSort] = useState('date-desc');
 
   // Edit / delete / pay

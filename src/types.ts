@@ -61,6 +61,10 @@ export interface HullingEntry {
   vehicleNumber?: string;
   /** informational bag count only - bags are NOT tracked in stock/ledger for hulling */
   bagsCount?: number;
+  /** optional driver name */
+  driverName?: string;
+  /** individual weighings in kg when the load was weighed in several rows; quantityKg is their total */
+  weighings?: number[];
   quantityKg: number;
   ratePerQtl: number;
   gstMode: 'none' | 'exclusive' | 'inclusive';
@@ -490,8 +494,12 @@ export interface TradingEntry {
   rateUnit: string;
   packSize?: number;
   total: number;
-  /** supplier name (buy) or customer name (sell), plain text */
+  /** supplier name (buy) or customer name (sell) as typed; kept for old records */
   party?: string;
+  /** linked supplier / customer record (same parties as every other page) */
+  partyId?: string;
+  /** payments made (buy) or received (sell). Missing on old entries, which were never payment-tracked and count as settled. */
+  payments?: Payment[];
   notes?: string;
   /** sale id this was imported from via "Import from Misc Sales" */
   sourceSaleId?: string;

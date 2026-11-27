@@ -33,11 +33,22 @@ function periodRange(mode: Mode, anchor: string, from: string, to: string) {
 }
 
 // ---------------------------------------------------------------- small UI bits
-function SectionTitle({ icon, title, right }: { icon?: string; title: string; right?: React.ReactNode }) {
+function Fold({ id, icon, title, right, defaultOpen = false, children }: { id: string; icon?: string; title: string; right?: React.ReactNode; defaultOpen?: boolean; children: React.ReactNode }) {
+  const key = `sprm-fold-${id}`;
+  const [open, setOpen] = useState(() => {
+    try { const v = localStorage.getItem(key); return v === null ? defaultOpen : v === '1'; } catch { return defaultOpen; }
+  });
+  const toggle = () => setOpen(o => { try { localStorage.setItem(key, o ? '0' : '1'); } catch { /* ignore */ } return !o; });
   return (
-    <div className="flex items-center justify-between mb-2 px-0.5">
-      <h2 className="text-[15px] font-extrabold text-forest-900">{icon && <span className="mr-1">{icon}</span>}{title}</h2>
-      {right}
+    <div>
+      <div className="flex items-center justify-between mb-2 px-0.5 gap-2">
+        <button type="button" onClick={toggle} aria-expanded={open} className="flex items-center gap-1.5 text-left min-w-0">
+          <h2 className="text-[15px] font-extrabold text-forest-900 truncate">{icon && <span className="mr-1">{icon}</span>}{title}</h2>
+          <span className={`text-gray-400 text-lg leading-none transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+        </button>
+        {right}
+      </div>
+      {open && children}
     </div>
   );
 }
@@ -99,6 +110,8 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
     const sellRows = [
       ...db.sales.map(s => ({ date: s.date, product: s.productId, kg: s.quantityKg, amt: s.finalTotal })),
       ...db.dispatches.map(d => ({ date: d.date, product: d.productId, kg: d.netKg, amt: d.finalTotal })),
+      // Trading sales count too (entries imported from Misc Sales are already in Sales, so skip them)
+      ...db.trading.filter(t => t.kind === 'sell' && !t.sourceSaleId).map(t => ({ date: t.date, product: 'trading', kg: 0, amt: t.total })),
     ].filter(r => inP(r.date));
     const prod = (pid: string) => {
       const rs = sellRows.filter(r => r.product === pid);
@@ -275,8 +288,7 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
         </div>
 
         {/* Quick actions */}
-        <div>
-          <SectionTitle title="Quick Actions" />
+        <Fold id="quick" icon="" title="Quick Actions" defaultOpen>
           <div className="grid grid-cols-6 gap-1.5">
             {quick.map(q => (
               <button key={q.id} onClick={() => onNav(q.id)} className="flex flex-col items-center gap-1 active:scale-95 transition-transform">
@@ -285,12 +297,12 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
               </button>
             ))}
           </div>
-        </div>
-
+        </Fold>
         {/* Performance */}
+        <Fold id="perf" icon="📊" title="Performance" defaultOpen>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-extrabold text-forest-900">📊 Performance</h2>
+            <span className="text-[11px] font-semibold text-gray-500">Period</span>
             <span className="text-[10px] font-semibold bg-forest-50 text-forest-700 rounded-full px-2 py-0.5">{fmtDate(range.start)}{range.end !== range.start ? '…' : ''}</span>
           </div>
           <div className="grid grid-cols-5 gap-1 bg-gray-100 rounded-xl p-1">
@@ -318,7 +330,9 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
           </div>
         </div>
 
+        </Fold>
         {/* Module breakdown cards */}
+        <Fold id="modules" icon="🧮" title="Module Summary">
         <div className="space-y-2.5">
           <button onClick={() => onNav('hulling')} className="w-full text-left rounded-2xl border border-rose-100 bg-rose-50/60 p-3">
             <div className="text-xs font-extrabold text-rose-900 mb-2">🏭 HULLING</div>
@@ -358,9 +372,9 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
           </button>
         </div>
 
+        </Fold>
         {/* Pending actions */}
-        <div>
-          <SectionTitle title="Pending Actions" right={alertCount > 0 ? <span className="text-[10px] font-bold bg-red-50 text-red-600 rounded-full px-2.5 py-1">{alertCount} Alert{alertCount > 1 ? 's' : ''}</span> : <span className="text-[10px] font-bold bg-green-50 text-green-700 rounded-full px-2.5 py-1">All clear</span>} />
+        <Fold id="pending" icon="" title="Pending Actions" right={alertCount > 0 ? <span className="text-[10px] font-bold bg-red-50 text-red-600 rounded-full px-2.5 py-1">{alertCount} Alert{alertCount > 1 ? 's' : ''}</span> : <span className="text-[10px] font-bold bg-green-50 text-green-700 rounded-full px-2.5 py-1">All clear</span>} defaultOpen>
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-100">
             <button onClick={() => onNav('outstanding')} className="w-full flex items-center gap-3 p-3 text-left">
               <span className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center text-lg">🙋</span>
@@ -394,11 +408,9 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
               </button>
             )}
           </div>
-        </div>
-
+        </Fold>
         {/* Paddy stock */}
-        <div>
-          <SectionTitle icon="🌾" title="Paddy Stock" right={<button onClick={() => onNav('dispatch')} className="text-xs font-bold text-forest-700">Dispatch →</button>} />
+        <Fold id="paddy" icon="🌾" title="Paddy Stock" right={<button onClick={() => onNav('dispatch')} className="text-xs font-bold text-forest-700">Dispatch →</button>}>
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <button onClick={() => setPaddyOpen(o => !o)} className="w-full flex items-center gap-3 p-3 text-left">
               <span className="w-10 h-10 rounded-xl bg-forest-50 flex items-center justify-center text-lg">🌱</span>
@@ -422,11 +434,9 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
               </div>
             )}
           </div>
-        </div>
-
+        </Fold>
         {/* Bag returns */}
-        <div>
-          <SectionTitle icon="👜" title="Bag Returns" />
+        <Fold id="bags" icon="👜" title="Bag Returns">
           <button onClick={() => onNav('bags')} className="w-full text-left bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="flex items-center gap-3 p-3 bg-amber-50/60">
               <span className="w-9 h-9 rounded-lg bg-white border border-amber-100 flex items-center justify-center">🗂</span>
@@ -438,11 +448,9 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
               <Metric label="Done" value={String(S.bagsDone)} sub="fully returned" tone="text-green-700" />
             </div>
           </button>
-        </div>
-
+        </Fold>
         {/* Dispatch P&L */}
-        <div>
-          <SectionTitle icon="🚛" title="Dispatch P&L" right={<span className="text-[10px] font-bold bg-gray-100 text-gray-600 rounded-full px-2.5 py-1">{S.dispCount} dispatch{S.dispCount === 1 ? '' : 'es'}</span>} />
+        <Fold id="dispatch" icon="🚛" title="Dispatch P&L" right={<span className="text-[10px] font-bold bg-gray-100 text-gray-600 rounded-full px-2.5 py-1">{S.dispCount} dispatch{S.dispCount === 1 ? '' : 'es'}</span>}>
           <button onClick={() => onNav('dispatch')} className="w-full text-left bg-white rounded-2xl border border-gray-100 shadow-sm">
             <div className="grid grid-cols-2 divide-x divide-gray-100 p-3">
               <Metric label="Total Revenue" value={fmtINR(S.dispRev)} sub={`Costs recorded: ${fmtINR(S.dispCosts)}`} />
@@ -451,12 +459,12 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
             </div>
             <div className="px-3 pb-3 text-[10px] text-gray-400">Qty: {fmtQtlKg(S.dispQty)} · Buy cost is estimated at your average paddy purchase cost and only for paddy dispatches.</div>
           </button>
-        </div>
-
+        </Fold>
         {/* Rice by variety */}
+        <Fold id="rice" icon="🍚" title="Rice by Variety">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[15px] font-extrabold text-forest-900">🍚 Rice by Variety</h2>
+            <span className="text-[11px] font-semibold text-gray-500">Variety</span>
             <div className="w-32">
               <Select value={riceFilter} onChange={e => setRiceFilter(e.target.value)}
                 options={[{ value: 'all', label: 'All' }, ...varietiesOf(db, 'rice').map(v => ({ value: v.id, label: v.name }))]} />
@@ -473,10 +481,12 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
           ))}
         </div>
 
+        </Fold>
         {/* Calendar */}
+        <Fold id="calendar" icon="📅" title="Activity Calendar">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 space-y-2.5">
           <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-extrabold text-forest-900">📅 Activity Calendar</h2>
+            <span className="text-[11px] font-semibold text-gray-500">Month</span>
             <div className="flex items-center gap-2">
               <button onClick={() => shiftMonth(-1)} className="w-7 h-7 rounded-lg border border-gray-200 text-gray-600">‹</button>
               <span className="text-xs font-bold w-28 text-center">{new Date(cal.y, cal.m - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</span>
@@ -525,24 +535,7 @@ export function Dashboard({ onNav }: { onNav: (id: string) => void }) {
           <div className="text-[11px] text-gray-500 font-semibold">Labour: {cal.labourDays}d this month</div>
         </div>
 
-        {/* Recent activity */}
-        <div>
-          <SectionTitle title="Recent Activity" />
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-100">
-            {db.auditLog.length === 0 ? (
-              <div className="p-5 text-center text-xs text-gray-400">No activity yet. Start with a Paddy Purchase or Hulling entry.</div>
-            ) : db.auditLog.slice(0, 6).map(l => (
-              <div key={l.id} className="flex items-center gap-3 px-3 py-2.5">
-                <span className="w-8 h-8 rounded-full bg-forest-100 text-forest-700 flex items-center justify-center text-xs font-bold">{l.module[0]}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-gray-800 truncate">{l.description}</div>
-                  <div className="text-[10px] text-gray-400">{l.module} · {new Date(l.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
+        </Fold>
         {/* Footer banner */}
         <div className="rounded-2xl bg-gradient-to-r from-forest-800 to-forest-600 text-white p-4 relative overflow-hidden">
           <div className="text-[9px] font-bold tracking-[0.25em] text-forest-200">QUALITY IS OUR PROMISE</div>

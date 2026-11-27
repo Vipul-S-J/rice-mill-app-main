@@ -45,7 +45,7 @@ export function HuskDispatchPage() {
   const [remarks, setRemarks] = useState('');
 
   const [search, setSearch] = useState('');
-  const [range, setRange] = useState('all');
+  const [range, setRange] = useState('today');
   const [statusF, setStatusF] = useState('all');
   const [order, setOrder] = useState('old');
   const [viewEntry, setViewEntry] = useState<DispatchEntry | null>(null);

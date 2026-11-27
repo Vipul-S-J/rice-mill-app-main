@@ -18,7 +18,7 @@ import type {
 import {
   Button, Input, Select, Card, KPICard, Modal, Confirm, Badge, GSTPanel,
   EmptyState, Tabs, ListRow, SectionHeader, DateRangePresets, SearchBar,
-  PaymentSummary, PaymentForm, CalcField, Textarea, ExtraPaid, toast
+  PaymentSummary, PaymentForm, CalcField, Textarea, ExtraPaid, PayQuick, roundPay, toast
 } from './ui';
 
 // ============ Reusable helpers ============
@@ -421,6 +421,10 @@ export function AddPaymentModal({ open, total, paid, modes, onClose, onSave, def
           <Input type="date" label="Date" value={date} onChange={e => setDate(e.target.value)} />
           <Input label="Amount" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} suffix="₹" />
         </div>
+        <PayQuick
+          onFull={() => setAmount(String(round2(total - paid)))}
+          onUp={() => setAmount(String(roundPay(amount, round2(total - paid), 'up')))}
+          onDown={() => setAmount(String(roundPay(amount, round2(total - paid), 'down')))} />
         {Number(amount) > round2(total - paid) + 0.009 && <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠ {fmtINR(round2(Number(amount) - (total - paid)))} more than the pending amount. You can still save; it is flagged as extra paid.</div>}
         <Select label="Mode" value={mode} onChange={e => setMode(e.target.value)} options={modes} />
         <Input label="Reference" value={reference} onChange={e => setReference(e.target.value)} placeholder="Optional" />
@@ -497,6 +501,7 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
             <div className="text-xs">Party:</div>
             <div className="font-bold">{partyName(db, entry.partyId)}</div>
             {entry.vehicleNumber && <div className="text-xs">Vehicle: {entry.vehicleNumber}</div>}
+            {entry.driverName && <div className="text-xs">Driver: {entry.driverName}</div>}
             {entry.varietyId && <div className="text-xs">Variety: {varietyName(db, entry.varietyId)}</div>}
           </div>
         </div>
@@ -510,6 +515,7 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
             {hd && hd.lots.map((l: any, i: number) => (
               <tr key={'h' + i}><td>Lot {i + 1}</td><td className="right">{l.qty} {hd.measureBy === 'bags' ? 'bags' : 'kg'} @ {fmtINR(l.rate)} = {fmtINR(l.amount)}</td></tr>
             ))}
+            {Array.isArray(entry.weighings) && entry.weighings.length > 1 && <tr><td>Weighings</td><td className="right">{entry.weighings.map((k: number) => fmtQtlKg(k)).join(' + ')}</td></tr>}
             {!(hd && entry.netKg <= 0) && <tr><td>Quantity</td><td className="right bold">{fmtQty(entry.quantityKg ?? entry.netKg)} ({fmtNumber(kgToQtl(entry.quantityKg ?? entry.netKg), 3)} Qtl)</td></tr>}
             {!hd && <tr><td>{pd ? 'Average rate per Qtl' : 'Rate per Qtl'}</td><td className="right">{fmtINR(entry.ratePerQtl)}</td></tr>}
             {type !== 'hulling' && <tr><td>Base Amount</td><td className="right">{fmtINR(entry.baseAmount)}</td></tr>}
@@ -1068,7 +1074,7 @@ function SaleForm({ open, initial, onClose, onSave }: {
 export function ExpensesPage() {
   const { db, addExpense, updateExpense, deleteExpense, addExpensePayment } = useDB();
   const [search, setSearch] = useState('');
-  const [range, setRange] = useState('all');
+  const [range, setRange] = useState('today');
   const [catFilter, setCatFilter] = useState('all');
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [showForm, setShowForm] = useState(false);

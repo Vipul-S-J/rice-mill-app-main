@@ -8,7 +8,7 @@ import type { Payment, SaleEntry, SaleLine } from '../types';
 import type { DateFilterValue } from './ui';
 import {
   Badge, Button, Card, Confirm, DateFilter, EmptyState, GSTPanel, Input, MiniBtn, Modal,
-  PayBox, PhotoAttach, QtyInput, SearchBar, Select, ExtraPaid, warnExtraPaid, toast,
+  PayBox, PhotoAttach, QtyInput, SearchBar, Select, ExtraPaid, Expandable, warnExtraPaid, toast,
 } from './ui';
 import { PartyInput, TaxSummary, useEnsureParty, usePaymentModes, partyName, statusBadge, AddPaymentModal } from './pages';
 import { printHtml, shareText, VOUCHER_CSS, esc } from '../utils/print';
@@ -36,7 +36,7 @@ export function SalesPage() {
   const modes = usePaymentModes();
   const [product, setProduct] = useState('all');
   const [search, setSearch] = useState('');
-  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'all' });
+  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'today' });
   const [sort, setSort] = useState('date-desc');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<SaleEntry | null>(null);
@@ -82,9 +82,25 @@ export function SalesPage() {
     <Card>
       {entries.length === 0 ? <EmptyState title={`No ${product === 'all' ? '' : products.find(p => p.id === product)?.name || ''} sales yet`} subtitle="Tap New Sale to create the first invoice." /> : entries.map(s => {
         const st = PRODUCT_STYLE[s.productId] || PRODUCT_STYLE.other; const paid = sumPayments(s.payments); const ps = paymentStatus(s.finalTotal, paid); const pName = db.categories.find(c => c.id === s.productId)?.name || s.itemName || 'Sale';
+        const due = round2(s.finalTotal - paid);
         return <div key={s.id} className="p-3 border-b border-gray-100 last:border-0">
-          <div className="flex gap-2 items-start cursor-pointer" onClick={() => setView(s)}><span className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl border ${st.soft}`}>{st.icon}</span><div className="flex-1 min-w-0"><div className="flex gap-1.5 items-center flex-wrap"><Badge tone="green">{s.invoiceNumber}</Badge><b className="text-sm truncate">{partyName(db, s.partyId)}</b></div><div className="text-[11px] text-gray-500">{fmtDate(s.date)} · {pName} · {fmtQtlKg(s.quantityKg)}</div>{s.lines && s.lines.length > 1 && <div className="text-[10px] text-gray-500 mt-1">{s.lines.map(l => `${db.varieties.find(v => v.id === l.varietyId)?.name || l.itemName || pName}: ${fmtQtlKg(l.quantityKg)}`).join(' · ')}</div>}</div><div className="text-right"><b className="text-sm">{fmtINR(s.finalTotal)}</b><div>{statusBadge(ps)}</div><div><ExtraPaid total={s.finalTotal} payments={s.payments} /></div></div></div>
-          <div className="flex gap-1.5 mt-2"><MiniBtn tone="blue" onClick={() => { setEditing(s); setShowForm(true); }}>✎ Edit</MiniBtn><MiniBtn onClick={() => setView(s)}>🧾 Invoice</MiniBtn>{ps !== 'paid' && <MiniBtn tone="green" onClick={() => setPay(s)}>＋ Pay</MiniBtn>}<MiniBtn tone="danger" onClick={() => setDel(s.id)}>🗑</MiniBtn></div>
+          <Expandable head={
+            <div className="flex gap-2 items-start">
+              <span className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-xl border ${st.soft}`}>{st.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex gap-1.5 items-center flex-wrap"><Badge tone="green">{s.invoiceNumber}</Badge><b className="text-sm truncate">{partyName(db, s.partyId)}</b></div>
+                <div className="text-[11px] text-gray-500">{fmtDate(s.date)} · {pName} · {fmtQtlKg(s.quantityKg)}</div>
+              </div>
+              <div className="text-right shrink-0"><b className="text-sm">{fmtINR(s.finalTotal)}</b><div>{statusBadge(ps)}</div></div>
+            </div>
+          }>
+            {s.lines && s.lines.length > 1 && <div className="text-[10px] text-gray-500">{s.lines.map(l => `${db.varieties.find(v => v.id === l.varietyId)?.name || l.itemName || pName}: ${fmtQtlKg(l.quantityKg)}`).join(' · ')}</div>}
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {due > 0.009 && <span className="text-[11px] font-semibold text-red-600">Due {fmtINR(due)}</span>}
+              <ExtraPaid total={s.finalTotal} payments={s.payments} />
+            </div>
+            <div className="flex gap-1.5 mt-2"><MiniBtn tone="blue" onClick={() => { setEditing(s); setShowForm(true); }}>✎ Edit</MiniBtn><MiniBtn onClick={() => setView(s)}>🧾 Invoice</MiniBtn>{ps !== 'paid' && <MiniBtn tone="green" onClick={() => setPay(s)}>＋ Pay</MiniBtn>}<MiniBtn tone="danger" onClick={() => setDel(s.id)}>🗑</MiniBtn></div>
+          </Expandable>
         </div>;
       })}
     </Card>

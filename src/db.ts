@@ -538,6 +538,26 @@ export function migrateDB(raw: any): Database {
     }));
   }
   if (!Array.isArray((db as any).trading)) (db as any).trading = [];
+  // Trading used a plain-text party name. Link each saved name to a real supplier/customer (created only if missing)
+  // so Trading behaves like every other page. Old entries get no payments (they count as settled) and nothing is deleted.
+  {
+    const byName = new Map<string, any>(db.parties.map(p => [p.name.trim().toLowerCase(), p]));
+    db.trading = db.trading.map((t: any) => {
+      const name = (t.party || '').trim();
+      if (t.partyId || !name) return t;
+      if (name.length > 60) return t; // long free text is a note, not a name
+      const type = t.kind === 'buy' ? 'supplier' : 'customer';
+      let p = byName.get(name.toLowerCase());
+      if (!p) {
+        p = { id: uid(), name, types: [type], openingBalance: 0, active: true, createdAt: now(), updatedAt: now() };
+        db.parties.push(p);
+        byName.set(name.toLowerCase(), p);
+      } else if (!p.types.includes(type)) {
+        p.types = [...p.types, type];
+      }
+      return { ...t, partyId: p.id };
+    });
+  }
   db.purchases = db.purchases.map((p: any) => {
     const q = { ...p };
     q.bagMovements = Array.isArray(q.bagMovements) ? q.bagMovements : [];
@@ -771,6 +791,11 @@ export function computePartyLedger(db: Database, partyId: string): { entries: Pa
     add(l.date, 'Labour', `Labour (${l.workType})`, 0, l.totalAmount, l.id);
     for (const p of l.payments) add(p.date, 'Payment', `Wage paid (${p.mode})`, p.amount, 0, l.id);
   }
+  for (const t of db.trading.filter(x => x.partyId === partyId && Array.isArray(x.payments))) {
+    const sale = t.kind === 'sell';
+    add(t.date, 'Trading', `${sale ? 'Sold' : 'Bought'} ${t.itemName} ${fmtTradeQty(t.qty, t.unit)}`, sale ? t.total : 0, sale ? 0 : t.total, t.id);
+    for (const p of t.payments || []) add(p.date, 'Payment', sale ? `Payment received (${p.mode})` : `Payment made (${p.mode})`, sale ? 0 : p.amount, sale ? p.amount : 0, t.id);
+  }
   // Only MANUAL cashbook entries - payments linked to bills are already counted above (no double counting)
   for (const c of db.cashbook.filter(x => x.partyId === partyId && !x.linkedEntryId)) {
     if (c.type === 'receipt') add(c.date, 'Cash Receipt', c.description || 'Receipt', 0, c.amount);
@@ -811,6 +836,7 @@ export function extraPaidMap(db: Database): Record<string, { module: string; ref
   for (const d of db.dispatches) put(d.id, 'Dispatch', d.dispatchNumber, dispatchDue(d), d.payments);
   for (const e of db.expenses) put(e.id, 'Expenses', 'expense', e.amount, e.payments);
   for (const l of db.labour) put(l.id, 'Labour', 'labour entry', l.totalAmount, l.payments);
+  for (const t of db.trading) if (Array.isArray(t.payments)) put(t.id, 'Trading', t.itemName, t.total, t.payments);
   for (const b of db.electricity) put(b.id, 'Electricity', 'bill', b.amount, b.payments);
   return out;
 }
@@ -853,13 +879,15 @@ export function collectBillLines(db: Database, partyId: string, from?: string, t
     const k = d.paddy ? 'Paddy' : d.husk ? 'Husk' : prod(d.productId);
     add({ id: `dispatch:${d.id}`, side: 'charge', kind: `${k} bought`, date: d.date, ref: d.dispatchNumber, description: `${k} ${fmtQtlKg(d.netKg)}`, amount: dispatchDue(d), paid: sumPayments(d.payments) });
   }
-  for (const t of db.trading) if (t.kind === 'sell' && (t.party || '').trim().toLowerCase() === name && inR(t.date))
-    add({ id: `trade:${t.id}`, side: 'charge', kind: `${t.itemName} bought`, date: t.date, ref: 'Trading', description: `${t.itemName} ${fmtTradeQty(t.qty, t.unit)}`, amount: t.total, paid: 0 });
+  const isMine = (t: { partyId?: string; party?: string }) => (t.partyId ? t.partyId === partyId : (t.party || '').trim().toLowerCase() === name);
+  const tradePaid = (t: { total: number; payments?: Payment[] }) => (Array.isArray(t.payments) ? sumPayments(t.payments) : t.total);
+  for (const t of db.trading) if (t.kind === 'sell' && isMine(t) && inR(t.date))
+    add({ id: `trade:${t.id}`, side: 'charge', kind: `${t.itemName} bought`, date: t.date, ref: 'Trading', description: `${t.itemName} ${fmtTradeQty(t.qty, t.unit)}`, amount: t.total, paid: tradePaid(t) });
 
   for (const p of db.purchases) if (p.partyId === partyId && inR(p.date))
     add({ id: `purchase:${p.id}`, side: 'credit', kind: 'Paddy given', date: p.date, ref: p.voucherNumber, description: `Paddy given ${fmtQtlKg(p.netKg)}`, amount: p.finalTotal, paid: sumPayments(p.payments) });
-  for (const t of db.trading) if (t.kind === 'buy' && (t.party || '').trim().toLowerCase() === name && inR(t.date))
-    add({ id: `trade:${t.id}`, side: 'credit', kind: `${t.itemName} given`, date: t.date, ref: 'Trading', description: `${t.itemName} given ${fmtTradeQty(t.qty, t.unit)}`, amount: t.total, paid: 0 });
+  for (const t of db.trading) if (t.kind === 'buy' && isMine(t) && inR(t.date))
+    add({ id: `trade:${t.id}`, side: 'credit', kind: `${t.itemName} given`, date: t.date, ref: 'Trading', description: `${t.itemName} given ${fmtTradeQty(t.qty, t.unit)}`, amount: t.total, paid: tradePaid(t) });
 
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.ref.localeCompare(b.ref));
 }

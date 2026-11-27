@@ -24,6 +24,15 @@ function resolveParty(db: Database, name: string, type: PartyType): string {
   return id;
 }
 
+/** Cashbook line for a Trading payment: money received on a sale, money paid on a purchase. */
+function tradeCash(db: Database, t: TradingEntry, p: Payment) {
+  db.cashbook.unshift({
+    id: uid(), date: p.date, type: t.kind === 'sell' ? 'receipt' : 'payment', mode: p.mode, amount: p.amount,
+    description: `Trading ${t.kind === 'sell' ? 'sale' : 'purchase'}: ${t.itemName} payment`, linkedModule: 'Trading', linkedEntryId: t.id,
+    partyId: t.partyId, createdAt: now(),
+  });
+}
+
 const normPayments = (ps: Payment[] | undefined): Payment[] =>
   (ps || []).map(p => ({ ...p, id: p.id || uid(), createdAt: p.createdAt || now() }));
 
@@ -120,6 +129,7 @@ interface Ctx {
   addTrading: (e: Omit<TradingEntry, 'id' | 'createdAt' | 'updatedAt'>) => string;
   updateTrading: (id: string, e: Partial<TradingEntry>) => void;
   deleteTrading: (id: string) => void;
+  addTradingPayment: (id: string, payment: Omit<Payment, 'id' | 'createdAt'>) => void;
   // Backup
   backup: () => string;
   restore: (json: string, mode: 'merge' | 'replace') => { count: number };
@@ -820,7 +830,9 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
     let newId = '';
     update(db => {
       newId = uid();
-      db.trading.unshift({ ...e, id: newId, createdAt: now(), updatedAt: now() });
+      const entry: TradingEntry = { ...e, id: newId, payments: e.payments ? normPayments(e.payments) : undefined, createdAt: now(), updatedAt: now() };
+      db.trading.unshift(entry);
+      for (const p of entry.payments || []) tradeCash(db, entry, p);
       const it = db.tradingItems.find(x => x.id === e.itemId);
       logAudit(db, 'create', 'Trading', `${e.kind === 'buy' ? 'Bought' : 'Sold'} ${e.qty} ${e.unit} ${it?.name || e.itemName} — ₹${e.total}`, newId);
     });
@@ -831,6 +843,11 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
       const ex = db.trading.find(x => x.id === id);
       if (!ex) return;
       Object.assign(ex, e, { updatedAt: now() });
+      if (Array.isArray(ex.payments)) {
+        ex.payments = normPayments(ex.payments);
+        db.cashbook = db.cashbook.filter(c => !(c.linkedEntryId === id && c.linkedModule === 'Trading'));
+        for (const p of ex.payments) tradeCash(db, ex, p);
+      }
       logAudit(db, 'edit', 'Trading', `Updated trading ${ex.kind} ${ex.itemName}`, id);
     });
   };
@@ -838,7 +855,19 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
     update(db => {
       const ex = db.trading.find(x => x.id === id);
       db.trading = db.trading.filter(x => x.id !== id);
+      db.cashbook = db.cashbook.filter(c => !(c.linkedEntryId === id && c.linkedModule === 'Trading'));
       logAudit(db, 'delete', 'Trading', `Deleted trading ${ex?.kind} ${ex?.itemName}`, id);
+    });
+  };
+  const addTradingPayment: Ctx['addTradingPayment'] = (id, payment) => {
+    update(db => {
+      const ex = db.trading.find(x => x.id === id);
+      if (!ex) return;
+      const p: Payment = { ...payment, id: uid(), createdAt: now() };
+      ex.payments = [...(ex.payments || []), p];
+      ex.updatedAt = now();
+      tradeCash(db, ex, p);
+      logAudit(db, 'payment', 'Trading', `Added payment to ${ex.kind === 'sell' ? 'sale' : 'purchase'} of ${ex.itemName}`, id, { amount: payment.amount });
     });
   };
 
@@ -974,7 +1003,7 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
     updateSettings, upsertVariety, deleteVariety, upsertCategory, deleteCategory,
     varietyUsage, categoryUsage, removeVariety, removeCategory,
     upsertTradingItem, hideTradingItem, removeTradingItem, tradingItemUsage,
-    addTrading, updateTrading, deleteTrading,
+    addTrading, updateTrading, deleteTrading, addTradingPayment,
     backup, restore, resetAll, bulkImport,
   };
 

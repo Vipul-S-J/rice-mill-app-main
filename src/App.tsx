@@ -10,6 +10,7 @@ import { HuskDispatchPage } from './components/huskDispatch';
 import { VehiclePage } from './components/vehicle';
 import { ReportsPage } from './components/reports';
 import { CombinedBillPage } from './components/combinedBill';
+import { LogsPage } from './components/logs';
 import { LabourPage } from './components/labour';
 import { ProductionPage } from './components/production';
 import { TradingPage } from './components/trading';
@@ -22,7 +23,7 @@ import { SalesPage } from './components/sales';
 import { InventoryPage } from './components/inventory';
 
 type MainTab = 'home' | 'hulling' | 'purchase' | 'sales' | 'trading' | 'more';
-type MorePage = 'inventory' | 'production' | 'stock' | 'parties' | 'bags' | 'dispatch' | 'vehicle' | 'husk' | 'expenses' | 'labour' | 'electricity' | 'reports' | 'outstanding' | 'backup' | 'settings' | 'cashbook' | 'combined';
+type MorePage = 'inventory' | 'production' | 'stock' | 'parties' | 'bags' | 'dispatch' | 'vehicle' | 'husk' | 'expenses' | 'labour' | 'electricity' | 'reports' | 'outstanding' | 'backup' | 'settings' | 'cashbook' | 'combined' | 'logs';
 
 const TITLES: Record<MainTab, string> = {
   home: 'SPRM Rice Mill', hulling: 'Hulling', purchase: 'Paddy Purchase', sales: 'Sales', trading: 'Trading Goods', more: 'More',
@@ -52,6 +53,7 @@ const MORE_ITEMS: { id: MorePage; label: string; icon: string; desc?: string }[]
   { id: 'cashbook', label: 'Cashbook', icon: '📒', desc: 'Cash in / out' },
   { id: 'outstanding', label: 'Outstanding', icon: '⏰', desc: 'Receivables / Payables' },
   { id: 'combined', label: 'Combined Bill', icon: '🧾', desc: 'Hulling + paddy + rice + bran in one bill' },
+  { id: 'logs', label: 'Logs', icon: '📜', desc: 'Activity log: who changed what' },
   { id: 'reports', label: 'Reports', icon: '📊', desc: 'Profit, summaries' },
   { id: 'backup', label: 'Backup / Restore', icon: '💾', desc: 'JSON / CSV export' },
   { id: 'settings', label: 'Settings', icon: '🛠', desc: 'Mill details, varieties' },
@@ -115,7 +117,7 @@ function AppShell() {
         </header>
       )}
 
-      <main className="flex-1 overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-28">
         {tab === 'home' && <Dashboard onNav={nav} />}
         {tab === 'hulling' && <HullingPage onPaddy={p => { setPurchasePrefill(p); goToTab('purchase'); }} />}
         {tab === 'purchase' && <PurchasePage prefill={purchasePrefill} onPrefillUsed={() => setPurchasePrefill(null)} />}
@@ -136,13 +138,14 @@ function AppShell() {
         {tab === 'more' && moreStack === 'cashbook' && <CashbookPage />}
         {tab === 'more' && moreStack === 'outstanding' && <OutstandingPage />}
         {tab === 'more' && moreStack === 'combined' && <CombinedBillPage />}
+        {tab === 'more' && moreStack === 'logs' && <LogsPage />}
         {tab === 'more' && moreStack === 'reports' && <ReportsPage />}
         {tab === 'more' && moreStack === 'backup' && <BackupPage />}
         {tab === 'more' && moreStack === 'settings' && <SettingsPage />}
       </main>
 
-      <nav className="sticky bottom-0 z-30 px-3 pt-2 pb-2 bg-gradient-to-t from-[#f4f6f8] via-[#f4f6f8]/95 to-transparent safe-bottom">
-        <div className="grid grid-cols-6 rounded-2xl bg-white/95 backdrop-blur border border-gray-100 shadow-soft p-1">
+      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.5rem)] max-w-[26rem] pointer-events-none" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="pointer-events-auto grid grid-cols-6 rounded-3xl bg-white/95 backdrop-blur-md border border-gray-100 shadow-[0_10px_30px_-6px_rgba(16,24,40,0.25)] p-1.5">
           {MAIN_TABS.map(t => {
             const active = tab === t.id && !(t.id === 'more' && moreStack);
             return (
