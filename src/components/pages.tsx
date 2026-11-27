@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { cn } from '../utils/cn';
-import { printHtml, shareText } from '../utils/print';
+import { sharePdfWithToast, savePdfWithToast } from './pdfActions';
 import { InventoryPage } from './inventory';
 import { THEMES, applyTheme, getTheme } from '../theme';
 import type { ThemeId } from '../theme';
@@ -440,9 +440,9 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
   const title = type === 'hulling' ? 'Hulling Receipt' : type === 'purchase' ? 'Purchase Voucher' : type === 'dispatch' ? 'Dispatch Slip' : 'Sale Invoice';
   const numKey = type === 'hulling' ? 'receiptNumber' : type === 'purchase' ? 'voucherNumber' : type === 'dispatch' ? 'dispatchNumber' : 'invoiceNumber';
 
-  const handleDownload = () => {
+  const buildHtml = () => {
     const content = document.getElementById('print-area-' + entry.id)?.innerHTML || '';
-    printHtml(`${title} ${entry[numKey]}`, `<style>
+    return `<style>
       .rcp{font-family:system-ui,sans-serif;font-size:13px;color:#1f2937}
       .rcp h1{color:#1b4332;font-size:20px;margin:0}
       .rcp table{width:100%;border-collapse:collapse;margin-top:10px}
@@ -454,16 +454,16 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
       .rcp .flex{display:flex;justify-content:space-between;margin-bottom:10px}.rcp .text-right{text-align:right}
       .rcp .border-b-2{border-bottom:2px solid #1b4332;padding-bottom:8px;margin-bottom:10px;text-align:center}
       .rcp .mt-3,.rcp .mt-4{margin-top:10px}.rcp .text-gray-600,.rcp .text-gray-500{color:#6b7280;font-size:11px}
-    </style><div class="rcp">${content}</div>`);
+    </style><div class="rcp">${content}</div>`;
   };
-  const handleShare = async () => {
+  const docTitle = `${title} ${entry[numKey]}`;
+  const handleDownload = () => savePdfWithToast(docTitle, buildHtml());
+  const handleShare = () => {
     const party = partyName(db, entry.partyId);
     const paidAmt = sumPayments(entry.payments);
     const dueAmt = type === 'dispatch' ? dispatchDue(entry) : entry.finalTotal;
-    const msg = `${db.settings.millName}\n${title} ${entry[numKey]} · ${fmtDate(entry.date)}\nParty: ${party}\nQty: ${fmtQtlKg(entry.quantityKg ?? entry.netKg)}\nTotal: ${fmtINR(dueAmt)}\nPaid: ${fmtINR(paidAmt)} · Pending: ${fmtINR(Math.max(0, dueAmt - paidAmt))}`;
-    const r = await shareText(`${title} ${entry[numKey]}`, msg);
-    if (r === 'copied') toast('Summary copied — paste it in WhatsApp');
-    else if (r === 'failed') toast('Sharing not available on this device', 'error');
+    const msg = `${db.settings.millName}\n${docTitle} · ${fmtDate(entry.date)}\nParty: ${party}\nQty: ${fmtQtlKg(entry.quantityKg ?? entry.netKg)}\nTotal: ${fmtINR(dueAmt)}\nPaid: ${fmtINR(paidAmt)} · Pending: ${fmtINR(Math.max(0, dueAmt - paidAmt))}`;
+    return sharePdfWithToast(docTitle, buildHtml(), msg);
   };
 
   const paid = sumPayments(entry.payments);

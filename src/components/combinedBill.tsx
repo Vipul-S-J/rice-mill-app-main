@@ -3,8 +3,9 @@ import { useDB } from '../context';
 import { bagSummary, collectBillLines, fmtDate, fmtINR, round2, summarizeBill } from '../db';
 import type { BillLine, BillSummary } from '../db';
 import type { Database, Party } from '../types';
-import { esc, printHtml, shareText, VOUCHER_CSS } from '../utils/print';
+import { esc, VOUCHER_CSS } from '../utils/print';
 import { Button, Card, Input, toast } from './ui';
+import { sharePdfWithToast, savePdfWithToast } from './pdfActions';
 import { PartyInput } from './pages';
 
 type Manual = { id: string; side: 'charge' | 'credit'; description: string; amount: number };
@@ -172,12 +173,9 @@ export function CombinedBillPage() {
           Show payments already made and pending balance in the bill
         </label>
         <div className="flex gap-2">
-          <Button variant="secondary" className="flex-1" onClick={async () => {
-            const msg = `${db.settings.millName}\nCombined bill · ${party.name}\nCharges: ${fmtINR(sum.charges)}\nCredits: ${fmtINR(sum.credits)}\n${who(shownSide)}: ${fmtINR(shownAmt)}`;
-            const r = await shareText(`Combined bill ${party.name}`, msg);
-            if (r === 'copied') toast('Summary copied — paste it in WhatsApp'); else if (r === 'failed') toast('Sharing not available on this device', 'error');
-          }}>Share</Button>
-          <Button variant="gold" className="flex-1" disabled={lines.length === 0} onClick={() => printHtml(`Combined bill ${party.name}`, html)}>Print / Save PDF</Button>
+          <Button variant="secondary" className="flex-1" disabled={lines.length === 0} onClick={() => sharePdfWithToast(`Combined bill ${party.name}`, html,
+            `${db.settings.millName}\nCombined bill · ${party.name}\nCharges: ${fmtINR(sum.charges)}\nCredits: ${fmtINR(sum.credits)}\n${who(shownSide)}: ${fmtINR(shownAmt)}`)}>Share PDF</Button>
+          <Button variant="gold" className="flex-1" disabled={lines.length === 0} onClick={() => savePdfWithToast(`Combined bill ${party.name}`, html)}>Print / Save PDF</Button>
         </div>
         {lines.length === 0
           ? <Card className="p-4 text-center text-xs text-gray-500">Tick at least one entry above to build the bill.</Card>
