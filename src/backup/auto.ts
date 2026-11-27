@@ -3,7 +3,7 @@ import { buildPlain, fileName, parseStamp } from './format';
 import { encryptText } from './crypto';
 import { deleteBackup, getKey, listBackups, pruneKind, putBackup, putKey, deleteKey } from './store';
 import type { BackupMeta } from './store';
-import { deleteFolderFile, listFolderFiles, writeFileToFolder } from './folder';
+import { deleteFolderFile, effectiveFolder, listFolderFiles, writeFileToFolder } from './folder';
 import type { FolderInfo } from './folder';
 import { toB64 } from './crypto';
 
@@ -71,13 +71,14 @@ export function runAutoBackup(db: Database, reason: string): Promise<void> {
       const name = fileName(!!s.encrypt, true);
       const meta: BackupMeta = { name, createdAt: new Date().toISOString(), size: new Blob([text]).size, encrypted: !!s.encrypt, kind: 'auto', note: reason };
       await putBackup(meta, text);
-      let where = 'Inside the app';
+      let where = 'Inside the app only';
       let folderWarning = '';
-      if (s.folder) {
+      const dest = effectiveFolder(s.folder);
+      if (dest) {
         try {
-          await writeFileToFolder(s.folder, name, s.encrypt ? 'application/octet-stream' : 'application/json', toB64(new TextEncoder().encode(text)), text);
-          where = `${s.folder.name} (and inside the app)`;
-        } catch (e: any) { folderWarning = `Saved inside the app, but not to the folder: ${e?.message || e}`; }
+          await writeFileToFolder(dest, name, s.encrypt ? 'application/octet-stream' : 'application/json', toB64(new TextEncoder().encode(text)), text);
+          where = `On the phone: ${dest.name} (and inside the app)`;
+        } catch (e: any) { folderWarning = `Saved inside the app, but NOT on the phone: ${e?.message || e}`; }
       }
       await applyRetention(s);
       patchAuto({ lastSuccess: meta.createdAt, latest: { name, size: meta.size, encrypted: meta.encrypted, where }, lastError: folderWarning ? { time: meta.createdAt, message: folderWarning } : undefined });
@@ -91,11 +92,12 @@ export function runAutoBackup(db: Database, reason: string): Promise<void> {
 async function applyRetention(s: AutoSettings) {
   const own = (await listBackups()).filter(b => b.kind === 'auto');
   for (const n of selectDelete(own.map(b => ({ name: b.name, at: new Date(b.createdAt) })), s.keep)) await deleteBackup(n);
-  if (s.folder) {
+  const dest = effectiveFolder(s.folder);
+  if (dest) {
     try {
-      const files = (await listFolderFiles(s.folder)).filter(f => /^SPRM_AutoBackup_/.test(f.name));
+      const files = (await listFolderFiles(dest)).filter(f => /^SPRM_AutoBackup_/.test(f.name));
       const items = files.map(f => ({ name: f.name, at: parseStamp(f.name) })).filter((x): x is { name: string; at: Date } => !!x.at);
-      for (const n of selectDelete(items, s.keep)) await deleteFolderFile(s.folder, n);
+      for (const n of selectDelete(items, s.keep)) await deleteFolderFile(dest, n);
     } catch { /* folder not reachable right now; retention runs again next time */ }
   }
 }

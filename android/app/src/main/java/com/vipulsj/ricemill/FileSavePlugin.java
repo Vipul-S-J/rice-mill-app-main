@@ -2,10 +2,13 @@ package com.vipulsj.ricemill;
 
 import android.app.Activity;
 import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 import android.util.Base64;
 
 import androidx.activity.result.ActivityResult;
@@ -224,6 +227,110 @@ public class FileSavePlugin extends Plugin {
             call.resolve();
         } catch (Exception e) {
             call.reject("This phone could not open the folder: " + e.getMessage());
+        }
+    }
+
+    // ---------- automatic copy in the phone's Documents/SPRM Backups folder (Android 10+, no permission needed) ----------
+    private static final String PUBLIC_DIR = "Documents/SPRM Backups";
+
+    private boolean publicSupported(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            call.reject("Saving to Documents needs Android 10 or newer. Choose a backup folder instead.");
+            return false;
+        }
+        return true;
+    }
+
+    @PluginMethod
+    public void writePublic(PluginCall call) {
+        if (!publicSupported(call)) return;
+        String data = call.getString("data");
+        String filename = call.getString("filename", "backup");
+        if (data == null) {
+            call.reject("Missing data");
+            return;
+        }
+        try {
+            ContentResolver cr = getContext().getContentResolver();
+            ContentValues v = new ContentValues();
+            v.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
+            v.put(MediaStore.MediaColumns.MIME_TYPE, call.getString("mimeType", "application/octet-stream"));
+            v.put(MediaStore.MediaColumns.RELATIVE_PATH, PUBLIC_DIR);
+            Uri uri = cr.insert(MediaStore.Files.getContentUri("external"), v);
+            if (uri == null) {
+                call.reject("The phone did not allow creating the backup file");
+                return;
+            }
+            try (OutputStream os = cr.openOutputStream(uri, "w")) {
+                if (os == null) {
+                    call.reject("Could not open the new backup file");
+                    return;
+                }
+                os.write(Base64.decode(data, Base64.DEFAULT));
+                os.flush();
+            }
+            JSObject ret = new JSObject();
+            ret.put("uri", uri.toString());
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Could not save to Documents/SPRM Backups: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void listPublic(PluginCall call) {
+        if (!publicSupported(call)) return;
+        try {
+            JSArray files = new JSArray();
+            try (Cursor c = getContext().getContentResolver().query(MediaStore.Files.getContentUri("external"),
+                    new String[]{MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED},
+                    MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?", new String[]{PUBLIC_DIR + "%"}, null)) {
+                while (c != null && c.moveToNext()) {
+                    JSObject f = new JSObject();
+                    f.put("name", c.getString(0));
+                    f.put("size", c.getLong(1));
+                    f.put("modified", c.getLong(2) * 1000L);
+                    files.put(f);
+                }
+            }
+            JSObject ret = new JSObject();
+            ret.put("files", files);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Could not read Documents/SPRM Backups: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void deletePublic(PluginCall call) {
+        if (!publicSupported(call)) return;
+        String filename = call.getString("filename");
+        if (filename == null) {
+            call.reject("Missing file name");
+            return;
+        }
+        try {
+            // only files this app created can be removed; others are left alone
+            getContext().getContentResolver().delete(MediaStore.Files.getContentUri("external"),
+                    MediaStore.MediaColumns.DISPLAY_NAME + "=? AND " + MediaStore.MediaColumns.RELATIVE_PATH + " LIKE ?",
+                    new String[]{filename, PUBLIC_DIR + "%"});
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not delete the old backup: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void openPublic(PluginCall call) {
+        try {
+            Uri dir = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Documents/SPRM Backups");
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(dir, DocumentsContract.Document.MIME_TYPE_DIR);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("This phone could not open the folder. Open Files > Documents > SPRM Backups yourself.");
         }
     }
 }

@@ -79,7 +79,7 @@ export function BackupPage() {
           <dt className="text-gray-500">Next scheduled</dt><dd className="font-semibold">{auto.enabled && nd ? (nd.getTime() <= Date.now() ? 'Due now (runs while the app is open)' : fmtWhen(nd.toISOString())) : '—'}</dd>
           <dt className="text-gray-500">Latest file</dt><dd className="font-semibold break-all">{auto.latest?.name || '—'}</dd>
           <dt className="text-gray-500">Size · Encryption</dt><dd className="font-semibold">{auto.latest ? `${fmtSize(auto.latest.size)} · ${auto.latest.encrypted ? 'Encrypted' : 'Not encrypted'}` : '—'}</dd>
-          <dt className="text-gray-500">Saved to</dt><dd className="font-semibold">{auto.latest?.where || (auto.folder ? auto.folder.name : '—')}</dd>
+          <dt className="text-gray-500">Saved to</dt><dd className="font-semibold">{auto.latest?.where || '—'}</dd>
         </dl>
         {auto.lastError && <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-2">⚠ {fmtWhen(auto.lastError.time)}: {auto.lastError.message}</div>}
         <p className="text-[11px] text-gray-500">Automatic backups run while the app is open. A scheduled backup happens the next time the app is opened.</p>

@@ -11,6 +11,10 @@ export interface FileSavePlugin {
   listFolder(o: { treeUri: string }): Promise<{ files: { name: string; size: number; modified: number }[] }>;
   deleteInFolder(o: { treeUri: string; filename: string }): Promise<void>;
   openFolder(o: { treeUri: string }): Promise<void>;
+  writePublic(o: { filename: string; mimeType: string; data: string }): Promise<{ uri: string }>;
+  listPublic(): Promise<{ files: { name: string; size: number; modified: number }[] }>;
+  deletePublic(o: { filename: string }): Promise<void>;
+  openPublic(): Promise<void>;
 }
 export const FileSave = registerPlugin<FileSavePlugin>('FileSave');
 export const isNative = () => Capacitor.isNativePlatform();

@@ -4,7 +4,8 @@ import { Button, Card, Input, Modal, Select, toast } from './ui';
 import { passwordBaseKey } from '../backup/crypto';
 import { clearBaseKey, isDue, loadAuto, runAutoBackup, saveBaseKey } from '../backup/auto';
 import type { AutoSettings } from '../backup/auto';
-import { NeedPermission, allowFolderAccess, folderSupported, forgetFolder, listFolderFiles, openFolder, pickFolder } from '../backup/folder';
+import { isNative } from '../utils/pdf';
+import { PHONE_FOLDER, NeedPermission, allowFolderAccess, effectiveFolder, folderSupported, forgetFolder, listFolderFiles, openFolder, pickFolder } from '../backup/folder';
 import type { BackupMeta } from '../backup/store';
 import { PasswordFields, checkPw, fmtSize, useAutoSettings } from './backupUi';
 
@@ -50,8 +51,9 @@ export function AutoBackupCard({ history, busy, setBusy, refresh }: { history: B
   useEffect(() => {
     (async () => {
       let txt = `${fmtSize(history.reduce((s, b) => s + b.size, 0))} inside the app`;
-      if (auto.folder) {
-        try { const f = (await listFolderFiles(auto.folder)).filter(x => /^SPRM_/.test(x.name)); txt += ` · ${fmtSize(f.reduce((s, x) => s + x.size, 0))} in the chosen folder`; }
+      const dest = effectiveFolder(auto.folder);
+      if (dest) {
+        try { const f = (await listFolderFiles(dest)).filter(x => /^SPRM_/.test(x.name)); txt += ` · ${fmtSize(f.reduce((s, x) => s + x.size, 0))} on the phone`; }
         catch { txt += ' · folder size not available'; }
       }
       setUsage(txt);
@@ -69,7 +71,12 @@ export function AutoBackupCard({ history, busy, setBusy, refresh }: { history: B
   };
   const backupNow = async () => {
     setBusy('Backing up…');
-    try { await runAutoBackup(db, 'manual run'); toast('Backup done'); refresh(); }
+    try {
+      await runAutoBackup(db, 'manual run'); refresh();
+      const warn = loadAuto().lastError;
+      if (warn && Date.now() - Date.parse(warn.time) < 30000) toast(warn.message, 'error');
+      else toast(isNative() || auto.folder ? 'Backup done. A copy is also on the phone.' : 'Backup done');
+    }
     catch (e: any) { toast(`Backup failed: ${e?.message || e}`, 'error'); }
     finally { setBusy(''); }
   };
@@ -78,7 +85,7 @@ export function AutoBackupCard({ history, busy, setBusy, refresh }: { history: B
   return (
     <Card className="p-4 space-y-3">
       <h3 className="font-bold text-forest-800">Automatic backup</h3>
-      <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={auto.enabled} onChange={e => setAuto({ enabled: e.target.checked })} /> Turn on automatic backup</label>
+      <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={auto.enabled} onChange={e => { setAuto({ enabled: e.target.checked }); if (e.target.checked && isNative() && !auto.folder) toast(`Copies will be saved on the phone in ${PHONE_FOLDER.name}`, 'info'); }} /> Turn on automatic backup</label>
       <div className="grid grid-cols-2 gap-2">
         <Select label="How often" value={auto.frequency} onChange={e => setAuto({ frequency: e.target.value as AutoSettings['frequency'] })}
           options={[{ value: 'daily', label: 'Daily' }, { value: 'weekly', label: 'Weekly' }, { value: 'monthly', label: 'Monthly' }]} />
@@ -111,13 +118,13 @@ function FolderBox({ auto, setAuto, note, setNote, choose }: { auto: AutoSetting
   const f = auto.folder;
   return (
     <div className="rounded-xl border border-gray-200 p-2.5 space-y-2">
-      <div className="text-xs font-semibold">Backup folder (optional)</div>
-      <div className="text-xs text-gray-600">{f ? <>Saving copies to <b>{f.name}</b></> : 'Not set. Backups stay inside the app and are lost if the app is uninstalled. Choose a folder to keep copies on the phone.'}</div>
+      <div className="text-xs font-semibold">Copy on the phone</div>
+      <div className="text-xs text-gray-600">{f ? <>Saving copies to <b>{f.name}</b></> : isNative() ? <>Every automatic backup is also saved on the phone in <b>{PHONE_FOLDER.name}</b> (Files app → Documents). These copies stay even if the app is removed. Pick another folder if you prefer.</> : 'Not set. Backups stay inside the app only. Choose a folder to keep copies on this computer.'}</div>
       <div className="flex flex-wrap gap-1.5">
-        {folderSupported() ? <Button size="sm" variant="secondary" onClick={choose}>{f ? 'Change folder' : 'Choose folder'}</Button> : <span className="text-[11px] text-gray-500">This browser cannot choose a backup folder.</span>}
+        {folderSupported() ? <Button size="sm" variant="secondary" onClick={choose}>{f ? 'Change folder' : isNative() ? 'Use another folder' : 'Choose folder'}</Button> : <span className="text-[11px] text-gray-500">This browser cannot choose a backup folder.</span>}
         {f?.kind === 'web' && <Button size="sm" variant="secondary" onClick={async () => { try { await allowFolderAccess(); setNote('Folder access allowed.'); } catch (e: any) { setNote(e instanceof NeedPermission ? e.message : e.message); } }}>Allow folder access</Button>}
-        {f && <Button size="sm" variant="secondary" onClick={async () => { try { await openFolder(f); } catch (e: any) { setNote(e.message); } }}>Open location</Button>}
-        {f && <Button size="sm" variant="ghost" onClick={async () => { await forgetFolder(f); setAuto({ folder: null }); }}>Remove</Button>}
+        {(f || isNative()) && <Button size="sm" variant="secondary" onClick={async () => { try { await openFolder(f || PHONE_FOLDER); } catch (e: any) { setNote(e.message); } }}>Open location</Button>}
+        {f && <Button size="sm" variant="ghost" onClick={async () => { await forgetFolder(f); setAuto({ folder: null }); }}>{isNative() ? 'Back to Documents folder' : 'Remove'}</Button>}
       </div>
       {note && <div className="text-[11px] text-amber-700">{note}</div>}
     </div>

@@ -48,7 +48,8 @@ Wage rules (all results can be edited before finalising):
   and manual backups are never removed automatically. Encrypted automatic backups use a password key kept on the device (the password itself is not stored).
 - **Limits to know:**
   - Automatic backups run **while the app is open** (and the next time it is opened if one was due). A phone cannot run them while the app is closed without extra native background code, which is not part of this version.
-  - Copies "inside the app" are lost if the app is uninstalled. Choose a folder, or keep manual backups elsewhere.
+  - **Copy on the phone:** on Android 10 or newer every automatic backup is also saved in the phone's **Documents / SPRM Backups** folder (Files app → Documents), with no extra permission. These copies stay if the app is removed. You can pick a different folder instead. On Android 9 or older, pick a folder (the Documents folder needs Android 10).
+  - Copies "inside the app" are lost if the app is uninstalled, which is why the phone copy matters.
   - Desktop browsers cannot open a folder for you, and may ask for folder access again after the page is reloaded.
   - Google Drive backup is **not included** (not requested).
 
