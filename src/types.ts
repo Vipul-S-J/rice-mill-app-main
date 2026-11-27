@@ -2,10 +2,24 @@
 
 export type PartyType = 'customer' | 'supplier' | 'worker' | 'vendor' | 'transport';
 
+export type WageType = 'daily' | 'monthly' | 'hourly' | 'contract';
+/** Staff details for a party of type 'worker'. Workers are the same records as before, so old wage entries stay linked. */
+export interface StaffProfile {
+  role?: string;
+  joiningDate?: string;
+  wageType: WageType;
+  /** daily: per day | monthly: per month | hourly: per hour | contract: informational */
+  wageRate: number;
+  /** overtime rate per hour; blank = worked out from the wage rate */
+  otRate?: number;
+  remarks?: string;
+}
 export interface Party {
   id: string;
   name: string;
   types: PartyType[];
+  /** present for staff members (workers) */
+  staff?: StaffProfile;
   phone?: string;
   village?: string;
   address?: string;
@@ -442,6 +456,75 @@ export interface AuditLog {
   details?: any;
 }
 
+export type AttendanceStatus = 'present' | 'half' | 'absent' | 'leave';
+/** Rice-mill attendance. One record per worker per date. Farm / other work is a WorkRecord, never derived from this. */
+export interface AttendanceEntry {
+  id: string;
+  date: string;
+  workerId: string;
+  status: AttendanceStatus;
+  /** hours worked (hourly workers) */
+  hours?: number;
+  overtimeHours?: number;
+  /** wage rate when it was marked, so later rate changes do not alter old days */
+  rate: number;
+  wageType: WageType;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+/** Work outside the mill (farm etc.) with its own rate. */
+export interface WorkRecord {
+  id: string;
+  date: string;
+  workerId: string;
+  location: string;
+  description?: string;
+  basis: 'days' | 'hours' | 'piece';
+  qty: number;
+  rate: number;
+  amount: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface Advance {
+  id: string;
+  date: string;
+  workerId: string;
+  amount: number;
+  mode: string;
+  remarks?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+/** One payroll per worker per month. Only final payrolls count in ledgers and expenses. */
+export interface PayrollEntry {
+  id: string;
+  workerId: string;
+  /** YYYY-MM */
+  month: string;
+  status: 'draft' | 'final';
+  wageType: WageType;
+  rate: number;
+  fullDays: number;
+  halfDays: number;
+  absentDays: number;
+  leaveDays: number;
+  hours: number;
+  overtimeHours: number;
+  /** earnings (basic + overtime + other work) and deductions; auto-calculated but editable */
+  gross: number;
+  deductions: number;
+  autoGross: number;
+  autoDeductions: number;
+  notes?: string;
+  finalizedAt?: string;
+  payments: Payment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Variety {
   id: string;
   name: string;
@@ -555,5 +638,9 @@ export interface Database {
   categories: Category[];
   tradingItems: TradingItem[];
   trading: TradingEntry[];
+  attendance: AttendanceEntry[];
+  workRecords: WorkRecord[];
+  advances: Advance[];
+  payrolls: PayrollEntry[];
   settings: Settings;
 }

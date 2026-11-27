@@ -3,7 +3,7 @@ import { DBProvider } from './context';
 import { ToastHost } from './components/ui';
 import {
   PartiesPage, StockPage, ExpensesPage,
-  ElectricityPage, CashbookPage, OutstandingPage, BagsPage, SettingsPage, BackupPage,
+  ElectricityPage, CashbookPage, OutstandingPage, BagsPage, SettingsPage,
 } from './components/pages';
 import { PaddyDispatchPage } from './components/paddyDispatch';
 import { HuskDispatchPage } from './components/huskDispatch';
@@ -11,6 +11,8 @@ import { VehiclePage } from './components/vehicle';
 import { ReportsPage } from './components/reports';
 import { CombinedBillPage } from './components/combinedBill';
 import { LogsPage } from './components/logs';
+import { BackupPage } from './components/backup';
+import { AutoBackupRunner } from './components/backupAuto';
 import { LabourPage } from './components/labour';
 import { ProductionPage } from './components/production';
 import { TradingPage } from './components/trading';
@@ -163,6 +165,7 @@ function AppShell() {
         </div>
       </nav>
 
+      <AutoBackupRunner />
       <ToastHost />
       {!entered && <Welcome onEnter={() => setEntered(true)} />}
     </div>

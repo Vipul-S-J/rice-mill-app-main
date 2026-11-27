@@ -1,3 +1,4 @@
+import { snapshotRaw } from './backup/store';
 import type {
   Database, Settings, Payment, AuditLog, Variety, Category, BagMovement, PaddySize, TradingItem
 } from './types';
@@ -463,16 +464,19 @@ const DEFAULT_TRADING_ITEMS: Omit<TradingItem, 'createdAt' | 'updatedAt'>[] = [
 ];
 
 const STORAGE_KEY = 'sprm_ricemill_db_v1';
+/** Increase when the data layout changes; an automatic backup is taken before an older database is upgraded. */
+export const DB_VERSION = 4;
 
 export function newDB(): Database {
   return {
-    version: 3,
+    version: DB_VERSION,
     parties: [], hulling: [], purchases: [], production: [], dispatches: [], sales: [],
     expenses: [], labour: [], electricity: [], cashbook: [], stockAdjustments: [], auditLog: [],
     varieties: DEFAULT_VARIETIES.map(v => ({ ...v })),
     categories: DEFAULT_CATEGORIES.map(c => ({ ...c })),
     tradingItems: DEFAULT_TRADING_ITEMS.map(t => ({ ...t, rateUnits: [...t.rateUnits], createdAt: now(), updatedAt: now() })),
     trading: [],
+    attendance: [], workRecords: [], advances: [], payrolls: [],
     settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
   };
 }
@@ -500,7 +504,7 @@ export function migrateDB(raw: any): Database {
     nextNumbers: { ...base.settings.nextNumbers, ...(rs.nextNumbers || {}) },
   };
   const arr = (k: keyof Database) => { if (!Array.isArray((db as any)[k])) (db as any)[k] = []; };
-  (['parties', 'hulling', 'purchases', 'production', 'dispatches', 'sales', 'expenses', 'labour', 'electricity', 'cashbook', 'stockAdjustments', 'auditLog'] as (keyof Database)[]).forEach(arr);
+  (['parties', 'hulling', 'purchases', 'production', 'dispatches', 'sales', 'expenses', 'labour', 'electricity', 'cashbook', 'stockAdjustments', 'auditLog', 'attendance', 'workRecords', 'advances', 'payrolls'] as (keyof Database)[]).forEach(arr);
   if (!db.varieties?.length) db.varieties = base.varieties;
   // give older dispatches a running trip number (oldest first) so the Vehicle section can list them
   {
@@ -590,18 +594,24 @@ export function migrateDB(raw: any): Database {
       quantityKg: s.quantityKg || 0, rate: s.ratePerQtl || 0, rateUnit: 'qtl', amount: s.baseAmount || 0,
     }],
   }));
-  db.version = 3;
+  db.version = DB_VERSION;
   return db;
 }
 
 export function loadDB(): Database {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return newDB();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return newDB();
     const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.version) return newDB();
+    if (!parsed || !parsed.version) throw new Error('unrecognised data');
+    // a data upgrade is about to run: keep an untouched copy first
+    if (parsed.version < DB_VERSION) snapshotRaw(raw, `before-upgrade-v${parsed.version}-to-v${DB_VERSION}`);
     return migrateDB(parsed);
-  } catch {
+  } catch (e) {
+    // never throw saved data away: keep the unreadable copy so it can be recovered, then start from an empty database
+    try { localStorage.setItem(`${STORAGE_KEY}_rescue_${Date.now()}`, raw); } catch { /* storage full */ }
+    snapshotRaw(raw, 'unreadable-data');
+    console.error('Saved data could not be loaded; a rescue copy was kept.', e);
     return newDB();
   }
 }

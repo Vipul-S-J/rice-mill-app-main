@@ -5,8 +5,10 @@ import type {
   StockAdjustment, CashbookEntry, Settings, Variety, Category, Payment, BagMovement, PartyType,
   TradingItem, TradingEntry
 } from './types';
-import { loadDB, saveDB, migrateDB, uid, now, nextReceipt, incrementNext, log as logAudit, round2, computeStock, nextTripNo, extraPaidMap } from './db';
+import { loadDB, saveDB, uid, now, nextReceipt, incrementNext, log as logAudit, round2, computeStock, nextTripNo, extraPaidMap } from './db';
 import { toast } from './components/ui';
+import { mergeDatabases } from './backup/merge';
+import { inspectBackup } from './backup/format';
 
 /** Finds a party by typed name (case-insensitive) or creates it - mutates the draft db inside one update. */
 function resolveParty(db: Database, name: string, type: PartyType): string {
@@ -133,6 +135,7 @@ interface Ctx {
   // Backup
   backup: () => string;
   restore: (json: string, mode: 'merge' | 'replace') => { count: number };
+  restoreFrom: (incoming: Database, mode: 'merge' | 'replace') => { added: Record<string, number>; conflicts: number };
   resetAll: () => void;
   // Bulk
   bulkImport: (module: string, rows: any[]) => { added: number; errors: string[] };
@@ -875,38 +878,25 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
   const backup: Ctx['backup'] = () => {
     return JSON.stringify(db, null, 2);
   };
+  /** Replace: the whole database becomes the backup. Merge: only records that are not already here are added; nothing is overwritten. */
+  const restoreFrom: Ctx['restoreFrom'] = (incoming, mode) => {
+    if (mode === 'replace') {
+      const next = JSON.parse(JSON.stringify(incoming)) as Database;
+      logAudit(next, 'restore', 'Backup', 'Restored a full backup (replaced all data)');
+      dispatch({ type: 'set', db: next });
+      return { added: {}, conflicts: 0 };
+    }
+    const r = mergeDatabases(db, incoming);
+    const total = Object.values(r.added).reduce((x, y) => x + y, 0);
+    logAudit(r.db, 'restore', 'Backup', `Merged a backup (${total} records added, ${r.conflicts} kept as they were)`);
+    dispatch({ type: 'set', db: r.db });
+    return { added: r.added, conflicts: r.conflicts };
+  };
   const restore: Ctx['restore'] = (json, mode) => {
-    let parsed: Database;
-    try { parsed = migrateDB(JSON.parse(json)); } catch { throw new Error('Invalid JSON'); }
-    let count = 0;
-    update(db => {
-      if (mode === 'replace') {
-        Object.keys(parsed).forEach(k => {
-          (db as any)[k] = (parsed as any)[k];
-        });
-        count = 1;
-      } else {
-        // merge: add entries with ids not already present
-        const merges = ['parties', 'hulling', 'purchases', 'production', 'dispatches', 'sales', 'expenses', 'labour', 'electricity', 'cashbook', 'stockAdjustments', 'trading'] as const;
-        for (const key of merges) {
-          const existing = new Set((db as any)[key].map((e: any) => e.id));
-          for (const entry of (parsed as any)[key] || []) {
-            if (!existing.has(entry.id)) {
-              (db as any)[key].unshift(entry);
-              count++;
-            }
-          }
-        }
-      }
-      if (mode === 'merge') {
-          const haveItems = new Set(db.tradingItems.map(t => t.id));
-          for (const it of parsed.tradingItems || []) {
-            if (!haveItems.has(it.id)) { db.tradingItems.push(it); count++; }
-          }
-        }
-      logAudit(db, 'restore', 'Backup', `Restored data (${mode}, ${count} records)`);
-    });
-    return { count };
+    const ins = inspectBackup(json);
+    if (ins.kind !== 'plain') throw new Error('This backup is encrypted. Use the Backup page to enter the password.');
+    const r = restoreFrom(ins.db, mode);
+    return { count: Object.values(r.added).reduce((x, y) => x + y, 0) };
   };
   const resetAll: Ctx['resetAll'] = () => {
     dispatch({ type: 'set', db: JSON.parse(JSON.stringify(loadDB())) });
@@ -1004,7 +994,7 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
     varietyUsage, categoryUsage, removeVariety, removeCategory,
     upsertTradingItem, hideTradingItem, removeTradingItem, tradingItemUsage,
     addTrading, updateTrading, deleteTrading, addTradingPayment,
-    backup, restore, resetAll, bulkImport,
+    backup, restore, restoreFrom, resetAll, bulkImport,
   };
 
   return <DBContext.Provider value={value}>{children}</DBContext.Provider>;

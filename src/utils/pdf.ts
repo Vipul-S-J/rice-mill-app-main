@@ -4,8 +4,13 @@ import { Share } from '@capacitor/share';
 import { printHtml, VOUCHER_CSS } from './print';
 
 /** Native "save as" dialog (Android Storage Access Framework). Implemented in FileSavePlugin.java. */
-interface FileSavePlugin {
+export interface FileSavePlugin {
   saveFile(o: { filename: string; mimeType: string; data: string }): Promise<{ uri: string }>;
+  pickFolder(): Promise<{ uri: string; name: string }>;
+  writeToFolder(o: { treeUri: string; filename: string; mimeType: string; data: string }): Promise<{ uri: string }>;
+  listFolder(o: { treeUri: string }): Promise<{ files: { name: string; size: number; modified: number }[] }>;
+  deleteInFolder(o: { treeUri: string; filename: string }): Promise<void>;
+  openFolder(o: { treeUri: string }): Promise<void>;
 }
 export const FileSave = registerPlugin<FileSavePlugin>('FileSave');
 export const isNative = () => Capacitor.isNativePlatform();
@@ -115,14 +120,24 @@ export async function savePdf(title: string, filename: string, bodyHtml: string)
   return 'printed';
 }
 
+/** Android gives a content:// address; turn it into something readable ("Internal storage / Download / file.json"). */
+export function prettyUri(uri: string): string {
+  try {
+    const d = decodeURIComponent(uri);
+    const m = d.match(/\/(?:document|tree)\/(.+)$/);
+    if (!m) return d;
+    return m[1].replace(/^primary:/, 'Internal storage/').replace(/^([0-9A-F]{4}-[0-9A-F]{4}):/i, 'SD card/').replace(/:/g, '/').replace(/\//g, ' / ');
+  } catch { return uri; }
+}
+export interface SaveResult { status: 'saved' | 'downloaded' | 'cancelled'; /** only what the platform told us */ where?: string }
 /** Asks where to save any file (CSV, JSON, ...). Android save dialog / desktop save dialog / plain download as the last resort. */
-export async function saveFile(filename: string, mimeType: string, blob: Blob): Promise<'saved' | 'downloaded' | 'cancelled'> {
+export async function saveFileDetailed(filename: string, mimeType: string, blob: Blob): Promise<SaveResult> {
   if (isNative()) {
     try {
-      await FileSave.saveFile({ filename, mimeType, data: await blobToBase64(blob) });
-      return 'saved';
+      const r = await FileSave.saveFile({ filename, mimeType, data: await blobToBase64(blob) });
+      return { status: 'saved', where: prettyUri(r.uri) };
     } catch (e: any) {
-      if (/cancel/i.test(String(e?.message))) return 'cancelled';
+      if (/cancel/i.test(String(e?.message))) return { status: 'cancelled' };
       throw e;
     }
   }
@@ -133,12 +148,15 @@ export async function saveFile(filename: string, mimeType: string, blob: Blob): 
       const handle = await w.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'File', accept: { [mimeType]: ext ? [ext] : [] } }] });
       const wr = await handle.createWritable();
       await wr.write(blob); await wr.close();
-      return 'saved';
+      return { status: 'saved', where: `${handle.name} (the browser does not tell which folder you picked)` };
     } catch (e: any) {
-      if (e?.name === 'AbortError') return 'cancelled';
+      if (e?.name === 'AbortError') return { status: 'cancelled' };
       throw e;
     }
   }
   downloadBlob(blob, filename);
-  return 'downloaded';
+  return { status: 'downloaded', where: 'Your browser\'s download folder (set by the browser)' };
+}
+export async function saveFile(filename: string, mimeType: string, blob: Blob): Promise<'saved' | 'downloaded' | 'cancelled'> {
+  return (await saveFileDetailed(filename, mimeType, blob)).status;
 }
