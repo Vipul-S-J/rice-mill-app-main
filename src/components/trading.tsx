@@ -2,15 +2,15 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useDB } from '../context';
 import {
   computeTradingStock, fmtDate, fmtINR, fmtQtlKg, fmtTradeQty, inRange,
-  round2, today, tradeQtyToBase, tradingLineTotal, tradingPL,
+  round2, today, tradeQtyToBase, tradingLineTotal, tradingPL, sumPayments, paymentStatus, withDraftPayment,
 } from '../db';
-import type { TradingEntry, TradingItem } from '../types';
+import type { Payment, TradingEntry, TradingItem } from '../types';
 import type { DateFilterValue } from './ui';
 import {
   Button, Card, Confirm, DateFilter, EmptyState, Input, Modal,
-  SearchBar, Select, toast,
+  SearchBar, Select, PayBox, ExtraPaid, Expandable, MiniBtn, warnExtraPaid, toast,
 } from './ui';
-import { partyName } from './pages';
+import { partyName, PartyInput, useEnsureParty, usePaymentModes, AddPaymentModal, statusBadge } from './pages';
 
 type Tab = 'buy' | 'sell' | 'pl';
 
@@ -50,9 +50,11 @@ export function TradingPage() {
 
 // ================= BUY / SELL TAB =================
 function TradeTab({ kind }: { kind: 'buy' | 'sell' }) {
-  const { db, deleteTrading } = useDB();
+  const { db, deleteTrading, addTradingPayment } = useDB();
+  const modeOptions = usePaymentModes();
+  const [payEntry, setPayEntry] = useState<TradingEntry | null>(null);
   const [search, setSearch] = useState('');
-  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'all' });
+  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'today' });
   const [sort, setSort] = useState('date-desc');
   const [editing, setEditing] = useState<TradingEntry | null>(null);
   const [del, setDel] = useState<TradingEntry | null>(null);
@@ -61,7 +63,7 @@ function TradeTab({ kind }: { kind: 'buy' | 'sell' }) {
     let xs = db.trading.filter(t => t.kind === kind);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      xs = xs.filter(t => t.itemName.toLowerCase().includes(q) || (t.party || '').toLowerCase().includes(q));
+      xs = xs.filter(t => t.itemName.toLowerCase().includes(q) || (t.party || '').toLowerCase().includes(q) || (t.partyId ? partyName(db, t.partyId).toLowerCase().includes(q) : false));
     }
     xs = xs.filter(t => inRange(t.date, dateF));
     xs.sort((a, b) => sort === 'date-asc' ? a.date.localeCompare(b.date)
@@ -78,7 +80,7 @@ function TradeTab({ kind }: { kind: 'buy' | 'sell' }) {
       <TradeForm kind={kind} editing={editing} onDone={() => setEditing(null)} />
 
       <div className="flex gap-2">
-        <div className="flex-1"><SearchBar value={search} onChange={setSearch} placeholder={kind === 'buy' ? 'Search item…' : 'Search item or customer…'} /></div>
+        <div className="flex-1"><SearchBar value={search} onChange={setSearch} placeholder={kind === 'buy' ? 'Search item or supplier…' : 'Search item or customer…'} /></div>
       </div>
       <DateFilter value={dateF} onChange={setDateF} />
       <div className="flex gap-2">
@@ -93,28 +95,51 @@ function TradeTab({ kind }: { kind: 'buy' | 'sell' }) {
         {entries.length === 0 ? (
           <EmptyState title={kind === 'buy' ? 'No purchase records for this date' : 'No sale records for this date'}
             subtitle="Adjust the search or date filter, or save a new entry above." />
-        ) : entries.map(t => (
-          <div key={t.id} className="px-3 py-2.5 border-b border-gray-100 last:border-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-sm font-bold truncate">{t.itemName}</div>
-                <div className="text-[11px] text-gray-500">{fmtDate(t.date)}{t.party ? ` · ${t.party}` : ''}</div>
-                <div className="text-[11px] text-gray-600 mt-0.5">{fmtTradeQty(t.qty, t.unit)} @ {fmtINR(t.rate)} / {t.rateUnit}</div>
-              </div>
-              <div className={`text-sm font-extrabold shrink-0 ${kind === 'buy' ? 'text-[#7c4a1e]' : 'text-[#0b5c40]'}`}>{fmtINR(t.total)}</div>
+        ) : entries.map(t => {
+          const tracked = Array.isArray(t.payments); // old entries were never payment-tracked and count as settled
+          const paid = tracked ? sumPayments(t.payments!) : t.total;
+          const due = round2(t.total - paid);
+          const who = t.partyId ? partyName(db, t.partyId) : t.party || '';
+          return (
+            <div key={t.id} className="px-3 py-2.5 border-b border-gray-100 last:border-0">
+              <Expandable head={
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold truncate">{t.itemName}</div>
+                    <div className="text-[11px] text-gray-500 truncate">{fmtDate(t.date)}{who ? ` · ${who}` : ''}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className={`text-sm font-extrabold ${kind === 'buy' ? 'text-[#7c4a1e]' : 'text-[#0b5c40]'}`}>{fmtINR(t.total)}</div>
+                    {tracked && <div className="mt-0.5">{statusBadge(paymentStatus(t.total, paid))}</div>}
+                  </div>
+                </div>
+              }>
+                <div className="text-[11px] text-gray-600">{fmtTradeQty(t.qty, t.unit)} @ {fmtINR(t.rate)} / {t.rateUnit}</div>
+                {t.notes && <div className="text-[11px] text-gray-500 italic mt-0.5">{t.notes}</div>}
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {tracked && due > 0.009 && <span className="text-[11px] font-semibold text-red-600">Due {fmtINR(due)}</span>}
+                  {tracked && <ExtraPaid total={t.total} payments={t.payments} />}
+                </div>
+                <div className="flex gap-1.5 mt-2">
+                  <MiniBtn tone="blue" onClick={() => setEditing(t)}>✎ Edit</MiniBtn>
+                  {tracked && due > 0.009 && <MiniBtn tone="green" onClick={() => setPayEntry(t)}>＋ Pay</MiniBtn>}
+                  <MiniBtn tone="danger" onClick={() => setDel(t)}>🗑</MiniBtn>
+                </div>
+              </Expandable>
             </div>
-            <div className="flex gap-1.5 mt-1.5">
-              <button onClick={() => setEditing(t)} className="text-xs font-semibold text-blue-700">Edit</button>
-              <button onClick={() => setDel(t)} className="text-xs font-semibold text-red-600">Delete</button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </Card>
       {entries.length > 0 && (
         <div className="text-xs text-gray-600 bg-white border border-gray-100 rounded-xl px-3 py-2 flex justify-between">
           <span>{entries.length} record{entries.length > 1 ? 's' : ''}</span>
           <b>{kind === 'buy' ? 'Total cost: ' : 'Total revenue: '}{fmtINR(total)}</b>
         </div>
+      )}
+      {payEntry && (
+        <AddPaymentModal open total={payEntry.total} paid={sumPayments(payEntry.payments || [])} modes={modeOptions} defaultDate={payEntry.date}
+          onClose={() => setPayEntry(null)}
+          onSave={(p: Omit<Payment, 'id' | 'createdAt'>) => { addTradingPayment(payEntry.id, p); setPayEntry(null); toast('Payment added'); }} />
       )}
       <Confirm open={!!del} onClose={() => setDel(null)}
         onConfirm={() => { if (del) { deleteTrading(del.id); toast('Trading record deleted — stock reversed'); } setDel(null); }}
@@ -126,6 +151,8 @@ function TradeTab({ kind }: { kind: 'buy' | 'sell' }) {
 // ================= ENTRY FORM =================
 function TradeForm({ kind, editing, onDone }: { kind: 'buy' | 'sell'; editing: TradingEntry | null; onDone: () => void }) {
   const { db, upsertTradingItem, addTrading, updateTrading } = useDB();
+  const modeOptions = usePaymentModes();
+  const ensureParty = useEnsureParty();
   const saving = useRef(false);
   const th = kind === 'buy' ? BUY : SELL;
   const items = useMemo(() => db.tradingItems.filter(t => t.active), [db.tradingItems]);
@@ -140,7 +167,12 @@ function TradeForm({ kind, editing, onDone }: { kind: 'buy' | 'sell'; editing: T
   const [rate, setRate] = useState('');
   const [party, setParty] = useState('');
   const [notes, setNotes] = useState('');
+  const [existing, setExisting] = useState<Payment[]>([]);
+  const [payAmt, setPayAmt] = useState('');
+  const [payMode, setPayMode] = useState('Cash');
+  const [payDate, setPayDate] = useState(today());
   const [confirmNeg, setConfirmNeg] = useState(false);
+  React.useEffect(() => { setPayDate(date); }, [date]); // payment date follows the entry date
 
   const isOther = itemId === '__other';
   const item: TradingItem | undefined = !isOther ? db.tradingItems.find(t => t.id === itemId) : undefined;
@@ -168,7 +200,8 @@ function TradeForm({ kind, editing, onDone }: { kind: 'buy' | 'sell'; editing: T
     setQty(editing.qty ? String(editing.qty) : '');
     setRateUnit(editing.rateUnit);
     setRate(editing.rate ? String(editing.rate) : '');
-    setParty(editing.party || ''); setNotes(editing.notes || '');
+    setParty(editing.partyId ? partyName(db, editing.partyId) : editing.party || ''); setNotes(editing.notes || '');
+    setExisting(editing.payments || []); setPayAmt(''); setPayMode(modeOptions[0] || 'Cash'); setPayDate(editing.date);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing?.id]);
 
@@ -184,12 +217,14 @@ function TradeForm({ kind, editing, onDone }: { kind: 'buy' | 'sell'; editing: T
     setDate(today());
     if (!keepItem) { setItemId(''); setCustomName(''); }
     setQty(''); setRate(''); setParty(''); setNotes('');
+    setExisting([]); setPayAmt(''); setPayMode(modeOptions[0] || 'Cash');
     if (item) { setQtyUnit(item.baseUnit); setRateUnit(item.baseUnit); }
   };
 
   const doSave = (force = false) => {
     if (saving.current) return;
     if (!date) { toast('Enter the date', 'error'); return; }
+    if (!party.trim()) { toast(kind === 'buy' ? 'Enter the supplier name' : 'Enter the customer name', 'error'); return; }
     let id = itemId;
     let it = item;
     if (isOther || !it) {
@@ -205,11 +240,16 @@ function TradeForm({ kind, editing, onDone }: { kind: 'buy' | 'sell'; editing: T
       setConfirmNeg(true); return;
     }
     saving.current = true;
+    const drafted = withDraftPayment(existing, payAmt, payMode, payDate);
+    // an old entry (never payment-tracked) stays settled unless a payment is entered now
+    const payments = editing && !Array.isArray(editing.payments) && drafted.length === 0 ? undefined : drafted;
+    warnExtraPaid(round2(sumPayments(payments || []) - total));
+    const partyId = ensureParty(party, kind === 'buy' ? 'supplier' : 'customer');
     const payload = {
       kind, date, itemId: id, itemName: it.name,
       qty: qtyBase, unit: it.baseUnit, rate: rateN, rateUnit: rateUnit || it.baseUnit,
       packSize: it.packSize, total,
-      party: party.trim() || undefined, notes: notes.trim() || undefined,
+      party: party.trim(), partyId: partyId || undefined, payments, notes: notes.trim() || undefined,
     };
     if (editing) { updateTrading(editing.id, payload); toast(`${kind === 'buy' ? 'Purchase' : 'Sale'} updated`); }
     else { addTrading(payload); toast(`${kind === 'buy' ? 'Purchase' : 'Sale'} saved`); }
@@ -251,6 +291,7 @@ function TradeForm({ kind, editing, onDone }: { kind: 'buy' | 'sell'; editing: T
       </div>
 
       <div className="p-3 space-y-3">
+        <PartyInput label={kind === 'buy' ? 'Supplier Name' : 'Customer Name'} required value={party} onChange={setParty} types={kind === 'buy' ? ['supplier'] : ['customer']} placeholder={kind === 'buy' ? 'Type or pick the supplier' : 'Type or pick the customer'} />
         <div className="grid grid-cols-2 gap-2">
           <Input type="date" label="Date *" value={date} onChange={e => setDate(e.target.value)} />
           <Select label="Item *" value={itemId} onChange={e => setItemId(e.target.value)}
@@ -289,14 +330,11 @@ function TradeForm({ kind, editing, onDone }: { kind: 'buy' | 'sell'; editing: T
           <div className="text-[11px] text-gray-500 -mt-1">Rate {fmtINR(rateN)} per {item.packUnit} ({item.packSize} {item.baseUnit})</div>
         )}
 
-        {kind === 'buy' ? (
-          <Input label="Supplier / Notes" value={party} onChange={e => setParty(e.target.value)} placeholder="Supplier name or notes" />
-        ) : (
-          <>
-            <Input label="Given To (Customer Name)" value={party} onChange={e => setParty(e.target.value)} placeholder="Farmer / customer name" />
-            <Input label="Notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes" />
-          </>
-        )}
+        <div className="rounded-xl border border-forest-100 p-3">
+          <PayBox total={total} existing={existing} onRemoveExisting={i => setExisting(ex => ex.filter((_, k) => k !== i))}
+            amount={payAmt} onAmount={setPayAmt} mode={payMode} onMode={setPayMode} date={payDate} onDate={setPayDate} modes={modeOptions} />
+        </div>
+        <Input label="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any remark" />
 
         <div className="flex gap-2">
           <Button className={`flex-1 ${th.btn}`} onClick={() => doSave(false)}>💾 {editing ? 'Update' : kind === 'buy' ? 'Save Purchase' : 'Save Sale'}</Button>
@@ -425,7 +463,7 @@ function ImportMiscModal({ open, onClose }: { open: boolean; onClose: () => void
       kind: 'sell', date: s.date, itemId: it.id, itemName: it.name,
       qty: qtyBase, unit: it.baseUnit, rate, rateUnit: it.baseUnit,
       packSize: it.packSize, total: s.finalTotal,
-      party: partyName(db, s.partyId) || undefined,
+      party: partyName(db, s.partyId) || undefined, partyId: s.partyId || undefined,
       notes: `Imported from Misc Sale ${s.invoiceNumber}`, sourceSaleId: s.id,
     });
     toast(`Imported ${s.invoiceNumber} → ${it.name}`);

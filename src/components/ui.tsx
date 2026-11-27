@@ -263,6 +263,19 @@ export function toast(message: string, type: 'success' | 'error' | 'info' = 'suc
   window.dispatchEvent(ev);
 }
 
+/** Round the amount being paid up or down to a whole rupee (uses the balance when nothing is typed yet). */
+export const roundPay = (cur: string | number, fallback: number, dir: 'up' | 'down'): number => {
+  const v = Number(cur) > 0 ? Number(cur) : fallback;
+  return Math.max(0, dir === 'up' ? Math.ceil(v - 1e-9) : Math.floor(v + 1e-9));
+};
+/** Fully paid / round up / round down shortcuts shared by every payment section. */
+export const PayQuick: React.FC<{ onFull: () => void; onUp: () => void; onDown: () => void }> = ({ onFull, onUp, onDown }) => (
+  <div className="grid grid-cols-3 gap-1.5">
+    <button type="button" onClick={onFull} className="py-2 rounded-xl bg-forest-700 text-white text-xs font-bold active:scale-[0.98]">✓ Fully Paid</button>
+    <button type="button" onClick={onUp} className="py-2 rounded-xl bg-white border border-gray-200 text-forest-800 text-xs font-bold active:scale-[0.98]">↑ Round Up</button>
+    <button type="button" onClick={onDown} className="py-2 rounded-xl bg-white border border-gray-200 text-forest-800 text-xs font-bold active:scale-[0.98]">↓ Round Down</button>
+  </div>
+);
 /** Over-payment is allowed: save normally, then warn (shown after the "saved" toast). */
 export function warnExtraPaid(extra: number) {
   if (extra > 0.009) setTimeout(() => toast(`⚠ ${fmtINR(extra)} paid extra. Saved and flagged as extra paid.`, 'info'), 700);
@@ -288,7 +301,7 @@ export const ToastHost: React.FC = () => {
     return () => window.removeEventListener('sprm-toast', handler);
   }, []);
   return (
-    <div className="fixed bottom-24 left-0 right-0 z-[100] flex flex-col items-center gap-2 pointer-events-none px-4">
+    <div className="fixed bottom-28 left-0 right-0 z-[100] flex flex-col items-center gap-2 pointer-events-none px-4">
       {toasts.map(t => (
         <div key={t.id} className={cn(
           'px-4 py-2.5 rounded-2xl shadow-xl text-sm font-semibold animate-fade-in backdrop-blur',
@@ -302,6 +315,20 @@ export const ToastHost: React.FC = () => {
   );
 };
 
+// ============ Expandable (collapsible record row) ============
+/** Shows a compact summary; tap to reveal the details and actions. The head must not contain buttons. */
+export const Expandable: React.FC<{ head: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; className?: string }> = ({ head, children, defaultOpen = false, className }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={className}>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="w-full flex items-start gap-2 text-left">
+        <div className="flex-1 min-w-0">{head}</div>
+        <span className={cn('text-gray-400 text-xl leading-none mt-0.5 transition-transform', open && 'rotate-90')}>›</span>
+      </button>
+      {open && <div className="mt-2 animate-fade-in">{children}</div>}
+    </div>
+  );
+};
 // ============ List Row ============
 export const ListRow: React.FC<{
   title: string;
@@ -595,11 +622,10 @@ export const PayBox: React.FC<{
       )}
       <Input label={existing.length ? 'Amount Paid Now (₹)' : 'Amount Paid (₹)'} type="number" inputMode="decimal" step="0.01"
         value={amount} onChange={e => onAmount(e.target.value)} placeholder="0" className="text-lg font-semibold" />
-      <button type="button"
-        onClick={() => onAmount(String(Math.max(0, round2(total - prior))))}
-        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-forest-800 text-white text-sm font-bold active:scale-[0.99]">
-        ✓ Mark Fully Paid
-      </button>
+      <PayQuick
+        onFull={() => onAmount(String(Math.max(0, round2(total - prior))))}
+        onUp={() => onAmount(String(roundPay(amount, Math.max(0, round2(total - prior)), 'up')))}
+        onDown={() => onAmount(String(roundPay(amount, Math.max(0, round2(total - prior)), 'down')))} />
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-gray-700">Balance Payable</label>
@@ -802,10 +828,11 @@ export const PaymentForm: React.FC<{
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-gray-700">Payments</label>
-        <Button type="button" size="sm" variant="gold" onClick={() => {
-          setNewPay(p => ({ ...p, amount: pending }));
-        }}>Fully Paid</Button>
       </div>
+      <PayQuick
+        onFull={() => setNewPay(p => ({ ...p, amount: pending }))}
+        onUp={() => setNewPay(p => ({ ...p, amount: roundPay(p.amount, pending, 'up') }))}
+        onDown={() => setNewPay(p => ({ ...p, amount: roundPay(p.amount, pending, 'down') }))} />
       {payments.length > 0 && (
         <div className="space-y-1">
           {payments.map((p, i) => (

@@ -7,7 +7,7 @@ import {
 import type { PurchaseEntry, PurchaseLine, BagMovement, Payment, PaddySize, BagGivenType } from '../types';
 import {
   Button, Input, Select, Card, Modal, Confirm, Badge, EmptyState, SearchBar, GSTPanel, CalcField,
-  QtyInput, PayBox, PhotoAttach, DateFilter, MiniBtn, Chips, Collapsible, ExtraPaid, warnExtraPaid, toast,
+  QtyInput, PayBox, PhotoAttach, DateFilter, MiniBtn, Chips, Collapsible, ExtraPaid, Expandable, warnExtraPaid, toast,
 } from './ui';
 import type { DateFilterValue } from './ui';
 import {
@@ -33,7 +33,7 @@ export function PurchasePage({ prefill, onPrefillUsed }: { prefill?: PurchasePre
   const [varietyFilter, setVarietyFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sort, setSort] = useState('date-desc');
-  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'all' });
+  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'today' });
   const [editing, setEditing] = useState<PurchaseEntry | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
@@ -157,7 +157,7 @@ export function PurchasePage({ prefill, onPrefillUsed }: { prefill?: PurchasePre
             <div key={p.id} className="px-3 py-3 border-b border-gray-100 last:border-0">
               <div className="flex items-start gap-2">
                 {selectMode && <input type="checkbox" className="mt-1.5 w-4 h-4" checked={selected.includes(p.id)} onChange={() => toggleSel(p.id)} />}
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => selectMode ? toggleSel(p.id) : setViewId(p.id)}>
+                <Expandable className="flex-1 min-w-0" head={
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -167,18 +167,18 @@ export function PurchasePage({ prefill, onPrefillUsed }: { prefill?: PurchasePre
                       <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1 flex-wrap">
                         <span>{fmtDate(p.date)}</span>
                         {sizes.map(s => <Badge key={s} tone={s === 'small' ? 'gold' : 'green'}>{s === 'small' ? '🌾 Small' : '🌱 Big'}</Badge>)}
-                        {totalBags > 0 && <span>· {totalBags} Bags</span>}
-                        {p.vehicleNumber && <span>· {p.vehicleNumber}</span>}
+                        <span>· {fmtQtlKg(p.netKg)}</span>
                       </div>
                     </div>
                     <div className="text-right shrink-0">
                       <div className="font-bold text-[15px] text-gray-900">{fmtINR(p.finalTotal)}</div>
                       <div className="mt-0.5">{statusBadge(st)}</div>
-                      {due > 0.009 && <div className="text-[10px] text-red-600 mt-0.5">Due {fmtINR(due)}</div>}
-                      <div className="mt-0.5"><ExtraPaid total={p.finalTotal} payments={p.payments} /></div>
                     </div>
                   </div>
-                  <div className="text-[11px] text-gray-500 mt-1.5">• Total: <b className="text-gray-800">{fmtQtlKg(p.netKg)}</b></div>
+                }>
+                  <div className="text-[11px] text-gray-500">
+                    {totalBags > 0 && <span>{totalBags} Bags</span>}{p.vehicleNumber && <span>{totalBags > 0 ? ' · ' : ''}{p.vehicleNumber}</span>}
+                  </div>
                   {p.lines.map(l => (
                     <div key={l.id} className="mt-1 bg-gray-50 rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-800">
                       {varietyName(db, l.varietyId)} {fmtQtlKg(l.qtyKg)} @ {fmtINR(l.ratePerQtl)}/Qtl
@@ -194,17 +194,21 @@ export function PurchasePage({ prefill, onPrefillUsed }: { prefill?: PurchasePre
                     {bag.oldIssued > 0 && <span className="text-[10px] font-semibold rounded-md px-2 py-1 bg-amber-50 text-amber-700 border border-amber-100">🧺 {bag.oldIssued} Old Bags given</span>}
                     {bag.pending !== 0 && <span className="text-[10px] font-semibold rounded-md px-2 py-1 bg-yellow-50 text-yellow-800 border border-yellow-200">⏳ {bag.pending} bags pending</span>}
                   </div>
-                </div>
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    {due > 0.009 && <span className="text-[11px] font-semibold text-red-600">Due {fmtINR(due)}</span>}
+                    <ExtraPaid total={p.finalTotal} payments={p.payments} />
+                  </div>
+                  {!selectMode && (
+                    <div className="flex gap-1.5 mt-2 flex-wrap">
+                      <MiniBtn onClick={() => { setEditing(p); setShowForm(true); }} tone="blue">✎ Edit</MiniBtn>
+                      <MiniBtn onClick={() => setViewId(p.id)}>🧾 Receipt</MiniBtn>
+                      {due > 0.009 && <MiniBtn onClick={() => setPayEntry(p)} tone="green">＋ Pay</MiniBtn>}
+                      <MiniBtn onClick={() => setBagEntry(p)} tone="gold">👜 Bags</MiniBtn>
+                      <MiniBtn onClick={() => setDelId(p.id)} tone="danger">🗑</MiniBtn>
+                    </div>
+                  )}
+                </Expandable>
               </div>
-              {!selectMode && (
-                <div className="flex gap-1.5 mt-2 flex-wrap">
-                  <MiniBtn onClick={() => { setEditing(p); setShowForm(true); }} tone="blue">✎ Edit</MiniBtn>
-                  <MiniBtn onClick={() => setViewId(p.id)}>🧾 Receipt</MiniBtn>
-                  {due > 0.009 && <MiniBtn onClick={() => setPayEntry(p)} tone="green">＋ Pay</MiniBtn>}
-                  <MiniBtn onClick={() => setBagEntry(p)} tone="gold">👜 Bags</MiniBtn>
-                  <MiniBtn onClick={() => setDelId(p.id)} tone="danger">🗑</MiniBtn>
-                </div>
-              )}
             </div>
           );
         })}

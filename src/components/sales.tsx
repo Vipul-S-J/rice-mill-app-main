@@ -8,10 +8,11 @@ import type { Payment, SaleEntry, SaleLine } from '../types';
 import type { DateFilterValue } from './ui';
 import {
   Badge, Button, Card, Confirm, DateFilter, EmptyState, GSTPanel, Input, MiniBtn, Modal,
-  PayBox, PhotoAttach, QtyInput, SearchBar, Select, ExtraPaid, warnExtraPaid, toast,
+  PayBox, PhotoAttach, QtyInput, SearchBar, Select, ExtraPaid, Expandable, warnExtraPaid, toast,
 } from './ui';
+import { sharePdfWithToast, savePdfWithToast } from './pdfActions';
 import { PartyInput, TaxSummary, useEnsureParty, usePaymentModes, partyName, statusBadge, AddPaymentModal } from './pages';
-import { printHtml, shareText, VOUCHER_CSS, esc } from '../utils/print';
+import { esc, VOUCHER_CSS } from '../utils/print';
 
 type RateUnit = 'qtl' | 'kg';
 type PaddySizeSel = 'small' | 'big' | '';
@@ -36,7 +37,7 @@ export function SalesPage() {
   const modes = usePaymentModes();
   const [product, setProduct] = useState('all');
   const [search, setSearch] = useState('');
-  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'all' });
+  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'today' });
   const [sort, setSort] = useState('date-desc');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<SaleEntry | null>(null);
@@ -82,9 +83,25 @@ export function SalesPage() {
     <Card>
       {entries.length === 0 ? <EmptyState title={`No ${product === 'all' ? '' : products.find(p => p.id === product)?.name || ''} sales yet`} subtitle="Tap New Sale to create the first invoice." /> : entries.map(s => {
         const st = PRODUCT_STYLE[s.productId] || PRODUCT_STYLE.other; const paid = sumPayments(s.payments); const ps = paymentStatus(s.finalTotal, paid); const pName = db.categories.find(c => c.id === s.productId)?.name || s.itemName || 'Sale';
+        const due = round2(s.finalTotal - paid);
         return <div key={s.id} className="p-3 border-b border-gray-100 last:border-0">
-          <div className="flex gap-2 items-start cursor-pointer" onClick={() => setView(s)}><span className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl border ${st.soft}`}>{st.icon}</span><div className="flex-1 min-w-0"><div className="flex gap-1.5 items-center flex-wrap"><Badge tone="green">{s.invoiceNumber}</Badge><b className="text-sm truncate">{partyName(db, s.partyId)}</b></div><div className="text-[11px] text-gray-500">{fmtDate(s.date)} · {pName} · {fmtQtlKg(s.quantityKg)}</div>{s.lines && s.lines.length > 1 && <div className="text-[10px] text-gray-500 mt-1">{s.lines.map(l => `${db.varieties.find(v => v.id === l.varietyId)?.name || l.itemName || pName}: ${fmtQtlKg(l.quantityKg)}`).join(' · ')}</div>}</div><div className="text-right"><b className="text-sm">{fmtINR(s.finalTotal)}</b><div>{statusBadge(ps)}</div><div><ExtraPaid total={s.finalTotal} payments={s.payments} /></div></div></div>
-          <div className="flex gap-1.5 mt-2"><MiniBtn tone="blue" onClick={() => { setEditing(s); setShowForm(true); }}>✎ Edit</MiniBtn><MiniBtn onClick={() => setView(s)}>🧾 Invoice</MiniBtn>{ps !== 'paid' && <MiniBtn tone="green" onClick={() => setPay(s)}>＋ Pay</MiniBtn>}<MiniBtn tone="danger" onClick={() => setDel(s.id)}>🗑</MiniBtn></div>
+          <Expandable head={
+            <div className="flex gap-2 items-start">
+              <span className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-xl border ${st.soft}`}>{st.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex gap-1.5 items-center flex-wrap"><Badge tone="green">{s.invoiceNumber}</Badge><b className="text-sm truncate">{partyName(db, s.partyId)}</b></div>
+                <div className="text-[11px] text-gray-500">{fmtDate(s.date)} · {pName} · {fmtQtlKg(s.quantityKg)}</div>
+              </div>
+              <div className="text-right shrink-0"><b className="text-sm">{fmtINR(s.finalTotal)}</b><div>{statusBadge(ps)}</div></div>
+            </div>
+          }>
+            {s.lines && s.lines.length > 1 && <div className="text-[10px] text-gray-500">{s.lines.map(l => `${db.varieties.find(v => v.id === l.varietyId)?.name || l.itemName || pName}: ${fmtQtlKg(l.quantityKg)}`).join(' · ')}</div>}
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {due > 0.009 && <span className="text-[11px] font-semibold text-red-600">Due {fmtINR(due)}</span>}
+              <ExtraPaid total={s.finalTotal} payments={s.payments} />
+            </div>
+            <div className="flex gap-1.5 mt-2"><MiniBtn tone="blue" onClick={() => { setEditing(s); setShowForm(true); }}>✎ Edit</MiniBtn><MiniBtn onClick={() => setView(s)}>🧾 Invoice</MiniBtn>{ps !== 'paid' && <MiniBtn tone="green" onClick={() => setPay(s)}>＋ Pay</MiniBtn>}<MiniBtn tone="danger" onClick={() => setDel(s.id)}>🗑</MiniBtn></div>
+          </Expandable>
         </div>;
       })}
     </Card>
@@ -407,5 +424,5 @@ function SaleInvoice({ db, sale, onClose }: { db: ReturnType<typeof useDB>['db']
   const [showPending, setShowPending] = useState(true);
   const owed = round2(sale.finalTotal - paid);
   const html = `<div class="vch"><style>${VOUCHER_CSS}</style><div class="c"><h1>${esc(db.settings.millName)}</h1><div class="muted">${esc(db.settings.address)}</div></div><div class="row"><div><b>SALE INVOICE ${esc(sale.invoiceNumber)}</b><div>${fmtDate(sale.date)}</div></div><div class="r"><b>${esc(partyName(db, sale.partyId))}</b><div>${esc(product)}</div></div></div><table><tr><th>Item / variety</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th></tr>${lines.map(l => `<tr><td>${esc(db.varieties.find(v => v.id === l.varietyId)?.name || l.itemName || product)}</td><td class="r">${fmtQtlKg(l.quantityKg)}</td><td class="r">${fmtINR(l.rate)}/${l.rateUnit === 'kg' ? 'kg' : 'Qtl'}</td><td class="r">${fmtINR(l.amount)}</td></tr>`).join('')}<tr class="tot"><td colspan="3">TOTAL</td><td class="r">${fmtINR(sale.finalTotal)}</td></tr>${showPending ? `<tr><td colspan="3">Paid</td><td class="r g">${fmtINR(paid)}</td></tr>${owed < -0.009 ? `<tr><td colspan="3">Extra paid</td><td class="r gold">${fmtINR(-owed)}</td></tr>` : `<tr><td colspan="3">Pending</td><td class="r red">${fmtINR(Math.max(0, owed))}</td></tr>`}` : ''}</table>${sale.totalTax ? `<div class="muted">Taxable ${fmtINR(sale.taxableAmount)} · CGST ${fmtINR(sale.cgst)} · SGST ${fmtINR(sale.sgst)}</div>` : ''}<div class="sig"><div>Authorised signatory</div><div>Customer signature</div></div></div>`;
-  return <Modal open onClose={onClose} title={`Invoice ${sale.invoiceNumber}`} maxWidth="max-w-xl" footer={<><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="secondary" onClick={async () => { const r = await shareText(`Sale ${sale.invoiceNumber}`, `${db.settings.millName}\n${product} sale ${sale.invoiceNumber}\n${partyName(db, sale.partyId)}\nQty ${fmtQtlKg(sale.quantityKg)} · Total ${fmtINR(sale.finalTotal)} · Due ${fmtINR(Math.max(0, sale.finalTotal - paid))}`); if (r === 'copied') toast('Copied — paste in WhatsApp'); }}>Share</Button><Button variant="gold" onClick={() => printHtml(`Sale ${sale.invoiceNumber}`, html)}>Print / Save PDF</Button></>}><><label className="flex items-center gap-2 text-xs font-semibold text-gray-700 mb-2"><input type="checkbox" checked={showPending} onChange={e => setShowPending(e.target.checked)} />Show payments and pending balance in the PDF</label><div className="border border-gray-200 rounded-lg p-3" dangerouslySetInnerHTML={{ __html: html }} /></></Modal>;
+  return <Modal open onClose={onClose} title={`Invoice ${sale.invoiceNumber}`} maxWidth="max-w-xl" footer={<><Button variant="secondary" onClick={onClose}>Close</Button><Button variant="secondary" onClick={() => sharePdfWithToast(`Sale ${sale.invoiceNumber}`, html, `${db.settings.millName}\n${product} sale ${sale.invoiceNumber}\n${partyName(db, sale.partyId)}\nQty ${fmtQtlKg(sale.quantityKg)} · Total ${fmtINR(sale.finalTotal)} · Due ${fmtINR(Math.max(0, sale.finalTotal - paid))}`)}>Share PDF</Button><Button variant="gold" onClick={() => savePdfWithToast(`Sale ${sale.invoiceNumber}`, html)}>Print / Save PDF</Button></>}><><label className="flex items-center gap-2 text-xs font-semibold text-gray-700 mb-2"><input type="checkbox" checked={showPending} onChange={e => setShowPending(e.target.checked)} />Show payments and pending balance in the PDF</label><div className="border border-gray-200 rounded-lg p-3" dangerouslySetInnerHTML={{ __html: html }} /></></Modal>;
 }

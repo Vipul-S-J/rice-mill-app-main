@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { cn } from '../utils/cn';
-import { printHtml, shareText } from '../utils/print';
+import { sharePdfWithToast, savePdfWithToast } from './pdfActions';
 import { InventoryPage } from './inventory';
 import { THEMES, applyTheme, getTheme } from '../theme';
 import type { ThemeId } from '../theme';
@@ -18,7 +18,7 @@ import type {
 import {
   Button, Input, Select, Card, KPICard, Modal, Confirm, Badge, GSTPanel,
   EmptyState, Tabs, ListRow, SectionHeader, DateRangePresets, SearchBar,
-  PaymentSummary, PaymentForm, CalcField, Textarea, ExtraPaid, toast
+  PaymentSummary, PaymentForm, CalcField, Textarea, ExtraPaid, PayQuick, roundPay, toast
 } from './ui';
 
 // ============ Reusable helpers ============
@@ -421,6 +421,10 @@ export function AddPaymentModal({ open, total, paid, modes, onClose, onSave, def
           <Input type="date" label="Date" value={date} onChange={e => setDate(e.target.value)} />
           <Input label="Amount" type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} suffix="₹" />
         </div>
+        <PayQuick
+          onFull={() => setAmount(String(round2(total - paid)))}
+          onUp={() => setAmount(String(roundPay(amount, round2(total - paid), 'up')))}
+          onDown={() => setAmount(String(roundPay(amount, round2(total - paid), 'down')))} />
         {Number(amount) > round2(total - paid) + 0.009 && <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">⚠ {fmtINR(round2(Number(amount) - (total - paid)))} more than the pending amount. You can still save; it is flagged as extra paid.</div>}
         <Select label="Mode" value={mode} onChange={e => setMode(e.target.value)} options={modes} />
         <Input label="Reference" value={reference} onChange={e => setReference(e.target.value)} placeholder="Optional" />
@@ -436,9 +440,9 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
   const title = type === 'hulling' ? 'Hulling Receipt' : type === 'purchase' ? 'Purchase Voucher' : type === 'dispatch' ? 'Dispatch Slip' : 'Sale Invoice';
   const numKey = type === 'hulling' ? 'receiptNumber' : type === 'purchase' ? 'voucherNumber' : type === 'dispatch' ? 'dispatchNumber' : 'invoiceNumber';
 
-  const handleDownload = () => {
+  const buildHtml = () => {
     const content = document.getElementById('print-area-' + entry.id)?.innerHTML || '';
-    printHtml(`${title} ${entry[numKey]}`, `<style>
+    return `<style>
       .rcp{font-family:system-ui,sans-serif;font-size:13px;color:#1f2937}
       .rcp h1{color:#1b4332;font-size:20px;margin:0}
       .rcp table{width:100%;border-collapse:collapse;margin-top:10px}
@@ -450,16 +454,16 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
       .rcp .flex{display:flex;justify-content:space-between;margin-bottom:10px}.rcp .text-right{text-align:right}
       .rcp .border-b-2{border-bottom:2px solid #1b4332;padding-bottom:8px;margin-bottom:10px;text-align:center}
       .rcp .mt-3,.rcp .mt-4{margin-top:10px}.rcp .text-gray-600,.rcp .text-gray-500{color:#6b7280;font-size:11px}
-    </style><div class="rcp">${content}</div>`);
+    </style><div class="rcp">${content}</div>`;
   };
-  const handleShare = async () => {
+  const docTitle = `${title} ${entry[numKey]}`;
+  const handleDownload = () => savePdfWithToast(docTitle, buildHtml());
+  const handleShare = () => {
     const party = partyName(db, entry.partyId);
     const paidAmt = sumPayments(entry.payments);
     const dueAmt = type === 'dispatch' ? dispatchDue(entry) : entry.finalTotal;
-    const msg = `${db.settings.millName}\n${title} ${entry[numKey]} · ${fmtDate(entry.date)}\nParty: ${party}\nQty: ${fmtQtlKg(entry.quantityKg ?? entry.netKg)}\nTotal: ${fmtINR(dueAmt)}\nPaid: ${fmtINR(paidAmt)} · Pending: ${fmtINR(Math.max(0, dueAmt - paidAmt))}`;
-    const r = await shareText(`${title} ${entry[numKey]}`, msg);
-    if (r === 'copied') toast('Summary copied — paste it in WhatsApp');
-    else if (r === 'failed') toast('Sharing not available on this device', 'error');
+    const msg = `${db.settings.millName}\n${docTitle} · ${fmtDate(entry.date)}\nParty: ${party}\nQty: ${fmtQtlKg(entry.quantityKg ?? entry.netKg)}\nTotal: ${fmtINR(dueAmt)}\nPaid: ${fmtINR(paidAmt)} · Pending: ${fmtINR(Math.max(0, dueAmt - paidAmt))}`;
+    return sharePdfWithToast(docTitle, buildHtml(), msg);
   };
 
   const paid = sumPayments(entry.payments);
@@ -497,6 +501,7 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
             <div className="text-xs">Party:</div>
             <div className="font-bold">{partyName(db, entry.partyId)}</div>
             {entry.vehicleNumber && <div className="text-xs">Vehicle: {entry.vehicleNumber}</div>}
+            {entry.driverName && <div className="text-xs">Driver: {entry.driverName}</div>}
             {entry.varietyId && <div className="text-xs">Variety: {varietyName(db, entry.varietyId)}</div>}
           </div>
         </div>
@@ -510,6 +515,7 @@ export function ReceiptModal({ entry, onClose, type }: { entry: any; onClose: ()
             {hd && hd.lots.map((l: any, i: number) => (
               <tr key={'h' + i}><td>Lot {i + 1}</td><td className="right">{l.qty} {hd.measureBy === 'bags' ? 'bags' : 'kg'} @ {fmtINR(l.rate)} = {fmtINR(l.amount)}</td></tr>
             ))}
+            {Array.isArray(entry.weighings) && entry.weighings.length > 1 && <tr><td>Weighings</td><td className="right">{entry.weighings.map((k: number) => fmtQtlKg(k)).join(' + ')}</td></tr>}
             {!(hd && entry.netKg <= 0) && <tr><td>Quantity</td><td className="right bold">{fmtQty(entry.quantityKg ?? entry.netKg)} ({fmtNumber(kgToQtl(entry.quantityKg ?? entry.netKg), 3)} Qtl)</td></tr>}
             {!hd && <tr><td>{pd ? 'Average rate per Qtl' : 'Rate per Qtl'}</td><td className="right">{fmtINR(entry.ratePerQtl)}</td></tr>}
             {type !== 'hulling' && <tr><td>Base Amount</td><td className="right">{fmtINR(entry.baseAmount)}</td></tr>}
@@ -1068,7 +1074,7 @@ function SaleForm({ open, initial, onClose, onSave }: {
 export function ExpensesPage() {
   const { db, addExpense, updateExpense, deleteExpense, addExpensePayment } = useDB();
   const [search, setSearch] = useState('');
-  const [range, setRange] = useState('all');
+  const [range, setRange] = useState('today');
   const [catFilter, setCatFilter] = useState('all');
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -1574,106 +1580,6 @@ export function SettingsPage() {
 }
 
 // ============ BACKUP / REPORTS ============
-export function BackupPage() {
-  const { db, backup, restore } = useDB();
-  const [data, setData] = useState<any>(null);
-  const fileRef = React.useRef<HTMLInputElement>(null);
-
-  const doBackup = () => {
-    const json = backup();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sprm-backup-${today()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast('Backup downloaded');
-  };
-
-  const handleFile = async (f: File) => {
-    const text = await f.text();
-    try {
-      const parsed = JSON.parse(text);
-      setData(parsed);
-    } catch { toast('Invalid JSON file', 'error'); }
-  };
-
-  const doRestore = (mode: 'merge' | 'replace') => {
-    if (!data) return;
-    try {
-      const r = restore(JSON.stringify(data), mode);
-      toast(`Restored ${r.count} records (${mode})`);
-      setData(null);
-    } catch (e: any) {
-      toast(e.message || 'Restore failed', 'error');
-    }
-  };
-
-  const exportCSV = () => {
-    const rows = [
-      ['Module', 'Type', 'ID', 'Date', 'Party', 'Details', 'Amount'],
-      ...db.hulling.map(h => ['Hulling', 'Receipt', h.receiptNumber, h.date, partyName(db, h.partyId), `${fmtQty(h.quantityKg)} @ ${fmtINR(h.ratePerQtl)}/Qtl`, String(h.finalTotal)]),
-      ...db.purchases.map(p => ['Purchase', 'Voucher', p.voucherNumber, p.date, partyName(db, p.partyId), `${fmtQty(p.netKg)} ${varietyName(db, p.varietyId)}`, String(p.finalTotal)]),
-      ...db.sales.map(s => ['Sale', 'Invoice', s.invoiceNumber, s.date, partyName(db, s.partyId), fmtQty(s.quantityKg), String(s.finalTotal)]),
-      ...db.dispatches.map(d => ['Dispatch', 'Slip', d.dispatchNumber, d.date, partyName(db, d.partyId), fmtQty(d.netKg), String(d.finalTotal)]),
-      ...db.expenses.map(e => ['Expense', 'Expense', e.id, e.date, e.payee || '', '', String(e.amount)]),
-      ...db.trading.map(t => [t.kind === 'buy' ? 'Trading Buy' : 'Trading Sell', 'Entry', t.id, t.date, t.party || '', `${t.itemName}: ${fmtTradeQty(t.qty, t.unit)} @ ${fmtINR(t.rate)}/${t.rateUnit}`, String(t.total)]),
-    ];
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sprm-export-${today()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast('CSV exported');
-  };
-
-  return (
-    <div className="p-3 space-y-3 pb-6">
-      <Card className="p-4 space-y-2">
-        <h3 className="font-semibold text-forest-800">Backup Data</h3>
-        <p className="text-xs text-gray-600">Export all your data as a JSON file. Keep this safe — you can restore from it later.</p>
-        <div className="flex gap-2">
-          <Button variant="primary" onClick={doBackup} className="flex-1">Download JSON Backup</Button>
-          <Button variant="secondary" onClick={exportCSV}>Export CSV</Button>
-        </div>
-      </Card>
-      <Card className="p-4 space-y-2">
-        <h3 className="font-semibold text-forest-800">Restore Data</h3>
-        <p className="text-xs text-gray-600">Select a previously exported JSON backup file.</p>
-        <input ref={fileRef} type="file" accept=".json" onChange={e => {
-          const f = e.target.files?.[0];
-          if (f) handleFile(f);
-        }} className="hidden" />
-        <Button variant="secondary" className="w-full" onClick={() => fileRef.current?.click()}>Choose Backup File...</Button>
-        {data && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-            <div className="text-xs text-amber-800">File loaded. Choose how to restore:</div>
-            <div className="text-[11px] text-amber-700">• Merge: adds records not already present<br/>• Replace: OVERWRITES all current data</div>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => doRestore('merge')} className="flex-1">Merge</Button>
-              <Button variant="danger" size="sm" onClick={() => doRestore('replace')} className="flex-1">Replace All</Button>
-            </div>
-          </div>
-        )}
-      </Card>
-      <Card className="p-3 text-xs text-gray-600 space-y-1">
-        <div className="font-semibold text-forest-800">Statistics</div>
-        <div>Parties: {db.parties.length}</div>
-        <div>Hulling entries: {db.hulling.length}</div>
-        <div>Purchases: {db.purchases.length}</div>
-        <div>Sales: {db.sales.length}</div>
-        <div>Dispatches: {db.dispatches.length}</div>
-        <div>Expenses: {db.expenses.length}</div>
-        <div>Production batches: {db.production.length}</div>
-      </Card>
-    </div>
-  );
-}
-
 // ============ REPORTS ============
 export function ReportsOverview({ range }: { range: { start: string; end: string } }) {
   const { db } = useDB();

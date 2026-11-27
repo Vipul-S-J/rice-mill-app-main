@@ -3,10 +3,12 @@ import type {
   Database, Party, HullingEntry, PurchaseEntry, ProductionBatch,
   DispatchEntry, SaleEntry, ExpenseEntry, LabourEntry, ElectricityBill,
   StockAdjustment, CashbookEntry, Settings, Variety, Category, Payment, BagMovement, PartyType,
-  TradingItem, TradingEntry
+  TradingItem, TradingEntry, WorkRecord, Advance, PayrollEntry, AttendanceStatus
 } from './types';
-import { loadDB, saveDB, migrateDB, uid, now, nextReceipt, incrementNext, log as logAudit, round2, computeStock, nextTripNo, extraPaidMap } from './db';
+import { loadDB, saveDB, uid, now, nextReceipt, incrementNext, log as logAudit, round2, computeStock, nextTripNo, extraPaidMap } from './db';
 import { toast } from './components/ui';
+import { mergeDatabases } from './backup/merge';
+import { inspectBackup } from './backup/format';
 
 /** Finds a party by typed name (case-insensitive) or creates it - mutates the draft db inside one update. */
 function resolveParty(db: Database, name: string, type: PartyType): string {
@@ -23,6 +25,26 @@ function resolveParty(db: Database, name: string, type: PartyType): string {
   });
   return id;
 }
+
+/** Cashbook line for a Trading payment: money received on a sale, money paid on a purchase. */
+function tradeCash(db: Database, t: TradingEntry, p: Payment) {
+  db.cashbook.unshift({
+    id: uid(), date: p.date, type: t.kind === 'sell' ? 'receipt' : 'payment', mode: p.mode, amount: p.amount,
+    description: `Trading ${t.kind === 'sell' ? 'sale' : 'purchase'}: ${t.itemName} payment`, linkedModule: 'Trading', linkedEntryId: t.id,
+    partyId: t.partyId, createdAt: now(),
+  });
+}
+
+export interface AttendanceInput { id?: string; date: string; workerId: string; status: AttendanceStatus; hours?: number; overtimeHours?: number; notes?: string }
+
+/** Cashbook lines for staff money: advances and salary payments. Re-created from the record each time, so they never duplicate. */
+function syncStaffCash(db: Database, module: 'Advance' | 'Payroll', entryId: string, workerId: string, lines: { date: string; mode: string; amount: number; text: string }[]) {
+  db.cashbook = db.cashbook.filter(c => !(c.linkedModule === module && c.linkedEntryId === entryId));
+  for (const l of lines) {
+    db.cashbook.unshift({ id: uid(), date: l.date, type: 'payment', mode: l.mode, amount: l.amount, description: l.text, linkedModule: module, linkedEntryId: entryId, partyId: workerId, createdAt: now() });
+  }
+}
+const workerName = (db: Database, id: string) => db.parties.find(p => p.id === id)?.name || 'worker';
 
 const normPayments = (ps: Payment[] | undefined): Payment[] =>
   (ps || []).map(p => ({ ...p, id: p.id || uid(), createdAt: p.createdAt || now() }));
@@ -120,9 +142,24 @@ interface Ctx {
   addTrading: (e: Omit<TradingEntry, 'id' | 'createdAt' | 'updatedAt'>) => string;
   updateTrading: (id: string, e: Partial<TradingEntry>) => void;
   deleteTrading: (id: string) => void;
+  addTradingPayment: (id: string, payment: Omit<Payment, 'id' | 'createdAt'>) => void;
+  // Staff
+  saveAttendance: (e: AttendanceInput) => 'added' | 'updated';
+  saveAttendanceBatch: (rows: AttendanceInput[]) => { added: number; updated: number };
+  deleteAttendance: (id: string) => void;
+  saveWorkRecord: (e: Partial<WorkRecord> & Pick<WorkRecord, 'date' | 'workerId' | 'location' | 'basis' | 'qty' | 'rate' | 'amount'>) => void;
+  deleteWorkRecord: (id: string) => void;
+  saveAdvance: (e: Partial<Advance> & Pick<Advance, 'date' | 'workerId' | 'amount' | 'mode'>) => void;
+  deleteAdvance: (id: string) => void;
+  savePayroll: (e: Partial<PayrollEntry> & Pick<PayrollEntry, 'workerId' | 'month'>) => string;
+  setPayrollStatus: (id: string, status: 'draft' | 'final') => void;
+  deletePayroll: (id: string) => void;
+  addPayrollPayment: (id: string, payment: Omit<Payment, 'id' | 'createdAt'>) => void;
+  removePayrollPayment: (id: string, paymentId: string) => void;
   // Backup
   backup: () => string;
   restore: (json: string, mode: 'merge' | 'replace') => { count: number };
+  restoreFrom: (incoming: Database, mode: 'merge' | 'replace') => { added: Record<string, number>; conflicts: number };
   resetAll: () => void;
   // Bulk
   bulkImport: (module: string, rows: any[]) => { added: number; errors: string[] };
@@ -166,6 +203,7 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
           address: p.address,
           openingBalance: round2(p.openingBalance || 0),
           notes: p.notes,
+          staff: p.staff,
           active: p.active ?? true,
           createdAt: now(),
           updatedAt: now(),
@@ -759,6 +797,95 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // ======== STAFF ========
+  const upsertAttendance = (db: Database, e: AttendanceInput): 'added' | 'updated' => {
+    const w = db.parties.find(p => p.id === e.workerId);
+    // one record per worker per date: marking the same day again edits the saved one
+    const ex = db.attendance.find(a => a.workerId === e.workerId && a.date === e.date);
+    const sp = w?.staff;
+    if (ex) {
+      Object.assign(ex, { status: e.status, hours: e.hours, overtimeHours: e.overtimeHours, notes: e.notes, updatedAt: now() });
+      return 'updated';
+    }
+    db.attendance.push({
+      id: uid(), date: e.date, workerId: e.workerId, status: e.status, hours: e.hours, overtimeHours: e.overtimeHours, notes: e.notes,
+      rate: sp?.wageRate || 0, wageType: sp?.wageType || 'contract', createdAt: now(), updatedAt: now(),
+    });
+    return 'added';
+  };
+  const saveAttendance: Ctx['saveAttendance'] = (e) => {
+    const exists = db.attendance.some(a => a.workerId === e.workerId && a.date === e.date);
+    update(d => { upsertAttendance(d, e); logAudit(d, exists ? 'edit' : 'create', 'Attendance', `${workerName(d, e.workerId)} ${e.date}: ${e.status}`); });
+    return exists ? 'updated' : 'added';
+  };
+  const saveAttendanceBatch: Ctx['saveAttendanceBatch'] = (rows) => {
+    let added = 0, updated = 0;
+    const seen = new Set<string>();
+    for (const r of rows) { const k = r.workerId + r.date; if (!seen.has(k)) { seen.add(k); db.attendance.some(a => a.workerId === r.workerId && a.date === r.date) ? updated++ : added++; } }
+    update(d => { for (const r of rows) upsertAttendance(d, r); logAudit(d, 'create', 'Attendance', `Marked attendance for ${rows.length} worker(s) on ${rows[0]?.date || ''}`); });
+    return { added, updated };
+  };
+  const deleteAttendance: Ctx['deleteAttendance'] = (id) => update(d => { d.attendance = d.attendance.filter(a => a.id !== id); logAudit(d, 'delete', 'Attendance', 'Deleted an attendance record', id); });
+  const saveWorkRecord: Ctx['saveWorkRecord'] = (e) => update(d => {
+    const ex = e.id ? d.workRecords.find(x => x.id === e.id) : undefined;
+    if (ex) Object.assign(ex, e, { updatedAt: now() });
+    else d.workRecords.push({ ...e, id: uid(), createdAt: now(), updatedAt: now() } as WorkRecord);
+    logAudit(d, ex ? 'edit' : 'create', 'Work records', `${workerName(d, e.workerId)}: ${e.location} work ₹${e.amount}`);
+  });
+  const deleteWorkRecord: Ctx['deleteWorkRecord'] = (id) => update(d => { d.workRecords = d.workRecords.filter(x => x.id !== id); logAudit(d, 'delete', 'Work records', 'Deleted a work record', id); });
+  const saveAdvance: Ctx['saveAdvance'] = (e) => update(d => {
+    let a = e.id ? d.advances.find(x => x.id === e.id) : undefined;
+    if (a) Object.assign(a, e, { updatedAt: now() });
+    else { a = { ...e, id: uid(), createdAt: now(), updatedAt: now() } as Advance; d.advances.push(a); }
+    syncStaffCash(d, 'Advance', a.id, a.workerId, [{ date: a.date, mode: a.mode, amount: a.amount, text: `Advance to ${workerName(d, a.workerId)}` }]);
+    logAudit(d, e.id ? 'edit' : 'create', 'Advances', `Advance ₹${a.amount} to ${workerName(d, a.workerId)}`, a.id);
+  });
+  const deleteAdvance: Ctx['deleteAdvance'] = (id) => update(d => {
+    d.advances = d.advances.filter(x => x.id !== id);
+    d.cashbook = d.cashbook.filter(c => !(c.linkedModule === 'Advance' && c.linkedEntryId === id));
+    logAudit(d, 'delete', 'Advances', 'Deleted an advance', id);
+  });
+  const payrollCash = (d: Database, p: PayrollEntry) => syncStaffCash(d, 'Payroll', p.id, p.workerId, p.payments.map(x => ({ date: x.date, mode: x.mode, amount: x.amount, text: `Salary ${p.month} · ${workerName(d, p.workerId)}` })));
+  const savePayroll: Ctx['savePayroll'] = (e) => {
+    // one payroll per worker per month: an existing one is updated, never duplicated
+    const id = db.payrolls.find(p => p.workerId === e.workerId && p.month === e.month)?.id || e.id || uid();
+    update(d => {
+      const ex = d.payrolls.find(p => p.workerId === e.workerId && p.month === e.month);
+      if (ex) { if (ex.status === 'final') return; Object.assign(ex, e, { id: ex.id, payments: ex.payments, status: 'draft', updatedAt: now() }); }
+      else d.payrolls.push({ payments: [], status: 'draft', ...e, id, createdAt: now(), updatedAt: now() } as PayrollEntry);
+      logAudit(d, ex ? 'edit' : 'create', 'Payroll', `Payroll ${e.month} for ${workerName(d, e.workerId)}`, id);
+    });
+    return id;
+  };
+  const setPayrollStatus: Ctx['setPayrollStatus'] = (id, status) => update(d => {
+    const p = d.payrolls.find(x => x.id === id);
+    if (!p || p.status === status) return;
+    p.status = status; p.finalizedAt = status === 'final' ? now() : undefined; p.updatedAt = now();
+    logAudit(d, 'edit', 'Payroll', `${status === 'final' ? 'Finalised' : 'Reopened'} payroll ${p.month} for ${workerName(d, p.workerId)}`, id);
+  });
+  const deletePayroll: Ctx['deletePayroll'] = (id) => update(d => {
+    const p = d.payrolls.find(x => x.id === id);
+    if (!p || p.payments.length) return; // a payroll with payments is never deleted
+    d.payrolls = d.payrolls.filter(x => x.id !== id);
+    logAudit(d, 'delete', 'Payroll', `Deleted payroll ${p.month} for ${workerName(d, p.workerId)}`, id);
+  });
+  const addPayrollPayment: Ctx['addPayrollPayment'] = (id, payment) => update(d => {
+    const p = d.payrolls.find(x => x.id === id);
+    if (!p || p.status !== 'final') return; // salary is paid only against a finalised payroll
+    const dup = p.payments.some(x => x.date === payment.date && x.amount === payment.amount && x.mode === payment.mode && (x.reference || '') === (payment.reference || '') && Date.now() - Date.parse(x.createdAt) < 15000);
+    if (dup) return; // the same payment saved twice within seconds (double tap)
+    p.payments.push({ ...payment, id: uid(), createdAt: now() });
+    p.updatedAt = now();
+    payrollCash(d, p);
+    logAudit(d, 'payment', 'Payroll', `Salary payment ₹${payment.amount} to ${workerName(d, p.workerId)} (${p.month})`, id, { amount: payment.amount });
+  });
+  const removePayrollPayment: Ctx['removePayrollPayment'] = (id, paymentId) => update(d => {
+    const p = d.payrolls.find(x => x.id === id);
+    if (!p) return;
+    p.payments = p.payments.filter(x => x.id !== paymentId);
+    payrollCash(d, p);
+    logAudit(d, 'edit', 'Payroll', `Removed a salary payment (${p.month}, ${workerName(d, p.workerId)})`, id);
+  });
   // ======== TRADING GOODS ========
   const upsertTradingItem: Ctx['upsertTradingItem'] = (t) => {
     const newId = t.id || uid();
@@ -820,7 +947,9 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
     let newId = '';
     update(db => {
       newId = uid();
-      db.trading.unshift({ ...e, id: newId, createdAt: now(), updatedAt: now() });
+      const entry: TradingEntry = { ...e, id: newId, payments: e.payments ? normPayments(e.payments) : undefined, createdAt: now(), updatedAt: now() };
+      db.trading.unshift(entry);
+      for (const p of entry.payments || []) tradeCash(db, entry, p);
       const it = db.tradingItems.find(x => x.id === e.itemId);
       logAudit(db, 'create', 'Trading', `${e.kind === 'buy' ? 'Bought' : 'Sold'} ${e.qty} ${e.unit} ${it?.name || e.itemName} — ₹${e.total}`, newId);
     });
@@ -831,6 +960,11 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
       const ex = db.trading.find(x => x.id === id);
       if (!ex) return;
       Object.assign(ex, e, { updatedAt: now() });
+      if (Array.isArray(ex.payments)) {
+        ex.payments = normPayments(ex.payments);
+        db.cashbook = db.cashbook.filter(c => !(c.linkedEntryId === id && c.linkedModule === 'Trading'));
+        for (const p of ex.payments) tradeCash(db, ex, p);
+      }
       logAudit(db, 'edit', 'Trading', `Updated trading ${ex.kind} ${ex.itemName}`, id);
     });
   };
@@ -838,7 +972,19 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
     update(db => {
       const ex = db.trading.find(x => x.id === id);
       db.trading = db.trading.filter(x => x.id !== id);
+      db.cashbook = db.cashbook.filter(c => !(c.linkedEntryId === id && c.linkedModule === 'Trading'));
       logAudit(db, 'delete', 'Trading', `Deleted trading ${ex?.kind} ${ex?.itemName}`, id);
+    });
+  };
+  const addTradingPayment: Ctx['addTradingPayment'] = (id, payment) => {
+    update(db => {
+      const ex = db.trading.find(x => x.id === id);
+      if (!ex) return;
+      const p: Payment = { ...payment, id: uid(), createdAt: now() };
+      ex.payments = [...(ex.payments || []), p];
+      ex.updatedAt = now();
+      tradeCash(db, ex, p);
+      logAudit(db, 'payment', 'Trading', `Added payment to ${ex.kind === 'sell' ? 'sale' : 'purchase'} of ${ex.itemName}`, id, { amount: payment.amount });
     });
   };
 
@@ -846,38 +992,25 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
   const backup: Ctx['backup'] = () => {
     return JSON.stringify(db, null, 2);
   };
+  /** Replace: the whole database becomes the backup. Merge: only records that are not already here are added; nothing is overwritten. */
+  const restoreFrom: Ctx['restoreFrom'] = (incoming, mode) => {
+    if (mode === 'replace') {
+      const next = JSON.parse(JSON.stringify(incoming)) as Database;
+      logAudit(next, 'restore', 'Backup', 'Restored a full backup (replaced all data)');
+      dispatch({ type: 'set', db: next });
+      return { added: {}, conflicts: 0 };
+    }
+    const r = mergeDatabases(db, incoming);
+    const total = Object.values(r.added).reduce((x, y) => x + y, 0);
+    logAudit(r.db, 'restore', 'Backup', `Merged a backup (${total} records added, ${r.conflicts} kept as they were)`);
+    dispatch({ type: 'set', db: r.db });
+    return { added: r.added, conflicts: r.conflicts };
+  };
   const restore: Ctx['restore'] = (json, mode) => {
-    let parsed: Database;
-    try { parsed = migrateDB(JSON.parse(json)); } catch { throw new Error('Invalid JSON'); }
-    let count = 0;
-    update(db => {
-      if (mode === 'replace') {
-        Object.keys(parsed).forEach(k => {
-          (db as any)[k] = (parsed as any)[k];
-        });
-        count = 1;
-      } else {
-        // merge: add entries with ids not already present
-        const merges = ['parties', 'hulling', 'purchases', 'production', 'dispatches', 'sales', 'expenses', 'labour', 'electricity', 'cashbook', 'stockAdjustments', 'trading'] as const;
-        for (const key of merges) {
-          const existing = new Set((db as any)[key].map((e: any) => e.id));
-          for (const entry of (parsed as any)[key] || []) {
-            if (!existing.has(entry.id)) {
-              (db as any)[key].unshift(entry);
-              count++;
-            }
-          }
-        }
-      }
-      if (mode === 'merge') {
-          const haveItems = new Set(db.tradingItems.map(t => t.id));
-          for (const it of parsed.tradingItems || []) {
-            if (!haveItems.has(it.id)) { db.tradingItems.push(it); count++; }
-          }
-        }
-      logAudit(db, 'restore', 'Backup', `Restored data (${mode}, ${count} records)`);
-    });
-    return { count };
+    const ins = inspectBackup(json);
+    if (ins.kind !== 'plain') throw new Error('This backup is encrypted. Use the Backup page to enter the password.');
+    const r = restoreFrom(ins.db, mode);
+    return { count: Object.values(r.added).reduce((x, y) => x + y, 0) };
   };
   const resetAll: Ctx['resetAll'] = () => {
     dispatch({ type: 'set', db: JSON.parse(JSON.stringify(loadDB())) });
@@ -974,8 +1107,10 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
     updateSettings, upsertVariety, deleteVariety, upsertCategory, deleteCategory,
     varietyUsage, categoryUsage, removeVariety, removeCategory,
     upsertTradingItem, hideTradingItem, removeTradingItem, tradingItemUsage,
-    addTrading, updateTrading, deleteTrading,
-    backup, restore, resetAll, bulkImport,
+    addTrading, updateTrading, deleteTrading, addTradingPayment,
+    saveAttendance, saveAttendanceBatch, deleteAttendance, saveWorkRecord, deleteWorkRecord, saveAdvance, deleteAdvance,
+    savePayroll, setPayrollStatus, deletePayroll, addPayrollPayment, removePayrollPayment,
+    backup, restore, restoreFrom, resetAll, bulkImport,
   };
 
   return <DBContext.Provider value={value}>{children}</DBContext.Provider>;

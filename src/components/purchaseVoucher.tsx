@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { Database, PurchaseEntry } from '../types';
 import { fmtINR, fmtQtlKg, fmtNumber, fmtDate, sumPayments, round2, bagSummary } from '../db';
-import { esc, VOUCHER_CSS, printHtml, shareText } from '../utils/print';
-import { Modal, Button, toast } from './ui';
+import { esc, VOUCHER_CSS } from '../utils/print';
+import { Modal, Button } from './ui';
+import { sharePdfWithToast, savePdfWithToast } from './pdfActions';
 
 const SIZE_LABEL: Record<string, string> = { small: 'Small', big: 'Big' };
 
@@ -88,12 +89,8 @@ export function PurchaseVoucherModal({ db, entry, onClose }: { db: Database; ent
     <Modal open onClose={onClose} title={`Voucher ${entry.voucherNumber}`} maxWidth="max-w-xl" footer={
       <>
         <Button variant="secondary" onClick={onClose}>Close</Button>
-        <Button variant="secondary" onClick={async () => {
-          const r = await shareText(`Purchase ${entry.voucherNumber}`, purchaseShareText(db, entry));
-          if (r === 'copied') toast('Summary copied — paste it in WhatsApp');
-          else if (r === 'failed') toast('Sharing not available on this device', 'error');
-        }}>Share</Button>
-        <Button variant="gold" onClick={() => printHtml(`Purchase Voucher ${entry.voucherNumber}`, html)}>Print / Save PDF</Button>
+        <Button variant="secondary" onClick={() => sharePdfWithToast(`Purchase ${entry.voucherNumber}`, html, purchaseShareText(db, entry))}>Share PDF</Button>
+        <Button variant="gold" onClick={() => savePdfWithToast(`Purchase Voucher ${entry.voucherNumber}`, html)}>Print / Save PDF</Button>
       </>
     }>
       <label className="flex items-center gap-2 text-xs font-semibold text-gray-700 mb-2">
@@ -101,7 +98,7 @@ export function PurchaseVoucherModal({ db, entry, onClose }: { db: Database; ent
         Show payments and pending balance in the PDF
       </label>
       <div className="bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} />
-      <p className="text-[11px] text-gray-500 mt-2">Tip: in the print window choose “Save as PDF” to keep a PDF copy or send it on WhatsApp.</p>
+      <p className="text-[11px] text-gray-500 mt-2">Share PDF opens your apps (WhatsApp, Gmail, Drive…). Print / Save PDF asks where to save it.</p>
     </Modal>
   );
 }

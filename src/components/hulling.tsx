@@ -7,7 +7,7 @@ import {
 import type { HullingEntry, Payment } from '../types';
 import {
   Button, Input, Select, Card, Modal, Confirm, EmptyState, SearchBar, TotalBar, GSTPanel,
-  CalcField, QtyInput, PayBox, PhotoAttach, DateFilter, MiniBtn, ExtraPaid, warnExtraPaid, toast,
+  CalcField, QtyInput, PayBox, PhotoAttach, DateFilter, MiniBtn, ExtraPaid, Expandable, warnExtraPaid, toast,
 } from './ui';
 import type { DateFilterValue } from './ui';
 import {
@@ -25,7 +25,7 @@ export function HullingPage({ onPaddy }: { onPaddy?: (p: { customer: string; pho
   const { db, addHulling, updateHulling, deleteHulling, addHullingPayment } = useDB();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('date-desc');
-  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'all' });
+  const [dateF, setDateF] = useState<DateFilterValue>({ preset: 'today' });
   const [statusFilter, setStatusFilter] = useState('all');
   const [editing, setEditing] = useState<HullingEntry | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -44,7 +44,7 @@ export function HullingPage({ onPaddy }: { onPaddy?: (p: { customer: string; pho
         return h.receiptNumber.toLowerCase().includes(s) ||
           (party?.name || '').toLowerCase().includes(s) ||
           (party?.phone || '').includes(s) ||
-          (h.vehicleNumber || '').toLowerCase().includes(s) ||
+          (h.vehicleNumber || '').toLowerCase().includes(s) || (h.driverName || '').toLowerCase().includes(s) ||
           h.date.includes(s);
       });
     }
@@ -115,36 +115,43 @@ export function HullingPage({ onPaddy }: { onPaddy?: (p: { customer: string; pho
           const due = round2(h.finalTotal - paid);
           return (
             <div key={h.id} className="px-3 py-3 border-b border-gray-100 last:border-0">
-              <div className="flex items-start justify-between gap-2 cursor-pointer" onClick={() => setViewEntry(h)}>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] font-bold text-forest-700 bg-forest-50 border border-forest-100 rounded px-1.5 py-0.5">{h.receiptNumber}</span>
-                    <span className="text-sm font-semibold text-gray-900 truncate">{partyName(db, h.partyId)}</span>
+              <Expandable head={
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold text-forest-700 bg-forest-50 border border-forest-100 rounded px-1.5 py-0.5">{h.receiptNumber}</span>
+                      <span className="text-sm font-semibold text-gray-900 truncate">{partyName(db, h.partyId)}</span>
+                    </div>
+                    <div className="text-[11px] text-gray-500 mt-0.5">{fmtDate(h.date)} · {fmtQtlKg(h.quantityKg)}</div>
                   </div>
-                  <div className="text-[11px] text-gray-500 mt-0.5">
-                    {fmtDate(h.date)}{h.vehicleNumber ? ` · ${h.vehicleNumber}` : ''}{h.bagsCount ? ` · ${h.bagsCount} bags` : ''}
+                  <div className="text-right shrink-0">
+                    <div className="font-bold text-[15px] text-gray-900">{fmtINR(h.finalTotal)}</div>
+                    <div className="mt-0.5">{statusBadge(st)}</div>
                   </div>
-                  <div className="text-xs text-gray-700 mt-1">
-                    {fmtQtlKg(h.quantityKg)} @ {fmtINR(h.ratePerQtl, { decimals: 0 })}/Qtl
-                  </div>
-                  {h.roundAdjustment !== 0 && (
-                    <div className="text-[10px] text-amber-700 mt-0.5">Rounded +{fmtINR(h.roundAdjustment)} (from {fmtINR(h.roundOriginal)})</div>
-                  )}
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="font-bold text-[15px] text-gray-900">{fmtINR(h.finalTotal)}</div>
-                  <div className="mt-0.5">{statusBadge(st)}</div>
-                  {due > 0.009 && <div className="text-[10px] text-red-600 mt-0.5">Due {fmtINR(due)}</div>}
-                  <div className="mt-0.5"><ExtraPaid total={h.finalTotal} payments={h.payments} /></div>
+              }>
+                <div className="text-[11px] text-gray-500">
+                  {h.vehicleNumber ? `${h.vehicleNumber}` : ''}{h.driverName ? `${h.vehicleNumber ? ' · ' : ''}Driver ${h.driverName}` : ''}{h.bagsCount ? ` · ${h.bagsCount} bags` : ''}
                 </div>
-              </div>
-              <div className="flex gap-1.5 mt-2 flex-wrap">
-                <MiniBtn onClick={() => { setEditing(h); setShowForm(true); }} tone="blue">✎ Edit</MiniBtn>
-                <MiniBtn onClick={() => setViewEntry(h)}>🧾 Receipt</MiniBtn>
-                {onPaddy && <MiniBtn onClick={() => onPaddy({ customer: partyName(db, h.partyId), phone: db.parties.find(p => p.id === h.partyId)?.phone || '', date: h.date })} tone="gold">🌾 Paddy</MiniBtn>}
-                {due > 0.009 && <MiniBtn onClick={() => setPayEntry(h)} tone="green">＋ Pay</MiniBtn>}
-                <MiniBtn onClick={() => setDelId(h.id)} tone="danger">🗑</MiniBtn>
-              </div>
+                <div className="text-xs text-gray-700 mt-1">
+                  {fmtQtlKg(h.quantityKg)} @ {fmtINR(h.ratePerQtl, { decimals: 0 })}/Qtl
+                  {h.weighings && h.weighings.length > 1 && <span className="text-gray-500"> ({h.weighings.length} weighings)</span>}
+                </div>
+                {h.roundAdjustment !== 0 && (
+                  <div className="text-[10px] text-amber-700 mt-0.5">Rounded +{fmtINR(h.roundAdjustment)} (from {fmtINR(h.roundOriginal)})</div>
+                )}
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {due > 0.009 && <span className="text-[11px] font-semibold text-red-600">Due {fmtINR(due)}</span>}
+                  <ExtraPaid total={h.finalTotal} payments={h.payments} />
+                </div>
+                <div className="flex gap-1.5 mt-2 flex-wrap">
+                  <MiniBtn onClick={() => { setEditing(h); setShowForm(true); }} tone="blue">✎ Edit</MiniBtn>
+                  <MiniBtn onClick={() => setViewEntry(h)}>🧾 Receipt</MiniBtn>
+                  {onPaddy && <MiniBtn onClick={() => onPaddy({ customer: partyName(db, h.partyId), phone: db.parties.find(p => p.id === h.partyId)?.phone || '', date: h.date })} tone="gold">🌾 Paddy</MiniBtn>}
+                  {due > 0.009 && <MiniBtn onClick={() => setPayEntry(h)} tone="green">＋ Pay</MiniBtn>}
+                  <MiniBtn onClick={() => setDelId(h.id)} tone="danger">🗑</MiniBtn>
+                </div>
+              </Expandable>
             </div>
           );
         })}
@@ -197,7 +204,9 @@ function HullingForm({ open, initial, onClose, onSave }: {
   const [phone, setPhone] = useState('');
   const [vehicle, setVehicle] = useState('');
   const [bags, setBags] = useState('');
-  const [qtyKg, setQtyKg] = useState(0);
+  const [rows, setRows] = useState<number[]>([0]);
+  const qtyKg = round2(rows.reduce((s, k) => s + (k || 0), 0)); // total of every weighing row
+  const [driver, setDriver] = useState('');
   const [rate, setRate] = useState('');
   const [gstMode, setGstMode] = useState<'none' | 'exclusive' | 'inclusive'>('none');
   const [gstRate, setGstRate] = useState('0');
@@ -224,7 +233,8 @@ function HullingForm({ open, initial, onClose, onSave }: {
     setPhone(i?.partyId ? db.parties.find(p => p.id === i.partyId)?.phone || '' : '');
     setVehicle(i?.vehicleNumber || '');
     setBags(i?.bagsCount ? String(i.bagsCount) : '');
-    setQtyKg(i?.quantityKg || 0);
+    setRows(i?.weighings && i.weighings.length > 1 ? [...i.weighings] : [i?.quantityKg || 0]);
+    setDriver(i?.driverName || '');
     setRate(String(i?.ratePerQtl ?? db.settings.defaultHullingRate));
     setGstMode(i?.gstMode || (db.settings.taxMode === 'gst' ? 'exclusive' : 'none'));
     setGstRate(String(i?.gstRate ?? db.settings.defaultGstRate ?? 0));
@@ -253,6 +263,8 @@ function HullingForm({ open, initial, onClose, onSave }: {
     const pid = ensureParty(customer, 'customer', phone);
     onSave({
       date, partyId: pid, vehicleNumber: vehicle || undefined, bagsCount: Number(bags) || undefined,
+      driverName: driver.trim() || undefined,
+      weighings: rows.filter(k => k > 0).length > 1 ? rows.filter(k => k > 0) : undefined,
       quantityKg: qtyKg, ratePerQtl: Number(rate) || 0,
       gstMode, gstRate: Number(gstRate) || 0,
       baseAmount: base, taxableAmount: g.taxable, cgst: g.cgst, sgst: g.sgst, totalTax: g.totalTax,
@@ -277,10 +289,19 @@ function HullingForm({ open, initial, onClose, onSave }: {
         <PartyInput label="Customer Name" required value={customer} onChange={v => { setCustomer(v); const ph = phoneForName(db, v); if (ph) setPhone(ph); }} types={['customer']} placeholder="Type name — saved automatically" />
         <PartyPhoneInput value={phone} onChange={setPhone} name={customer} />
 
-        <div className="grid grid-cols-[70px_1fr_88px] gap-2 items-start">
-          <Input label="Bags" type="number" inputMode="numeric" value={bags} onChange={e => setBags(e.target.value)} placeholder="opt." />
-          <QtyInput label="Qty (Qtl + Kg) *" valueKg={qtyKg} onChange={setQtyKg} />
+        <Input label="Driver name (optional)" value={driver} onChange={e => setDriver(e.target.value)} placeholder="Driver of the vehicle" />
+        <div className="grid grid-cols-2 gap-2 items-start">
+          <Input label="Bags" type="number" inputMode="numeric" value={bags} onChange={e => setBags(e.target.value)} placeholder="optional" />
           <Input label="Rate/Qtl (₹) *" type="number" inputMode="decimal" value={rate} onChange={e => setRate(e.target.value)} />
+        </div>
+        <div className="space-y-2">
+          {rows.map((kg, idx) => (
+            <div key={idx} className="flex items-end gap-2">
+              <div className="flex-1"><QtyInput label={rows.length > 1 ? `Weighing ${idx + 1} (Qtl + Kg)` : 'Qty (Qtl + Kg) *'} valueKg={kg} onChange={v => setRows(rs => rs.map((x, k) => (k === idx ? v : x)))} /></div>
+              {rows.length > 1 && <button type="button" onClick={() => setRows(rs => rs.filter((_, k) => k !== idx))} aria-label={`Remove weighing ${idx + 1}`} className="mb-0.5 w-9 h-10 rounded-xl border border-red-200 text-red-600 bg-red-50/50 text-lg leading-none">×</button>}
+            </div>
+          ))}
+          <button type="button" onClick={() => setRows(rs => [...rs, 0])} className="w-full py-2 rounded-xl border border-dashed border-forest-300 text-forest-700 text-xs font-bold bg-forest-50/50 active:scale-[0.99]">＋ Add Weighing Row</button>
         </div>
         <div className="text-[10px] text-gray-400 -mt-2">Bags are for reference only — bag stock is tracked in Paddy Purchase.</div>
         {qtyKg > 0 && (

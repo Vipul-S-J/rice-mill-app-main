@@ -141,7 +141,7 @@ export function PaddyDispatchPage() {
 
   // ---------- list state ----------
   const [search, setSearch] = useState('');
-  const [range, setRange] = useState('all');
+  const [range, setRange] = useState('today');
   const [typeFilter, setTypeFilter] = useState('all');
   const [viewEntry, setViewEntry] = useState<DispatchEntry | null>(null);
   const [payEntry, setPayEntry] = useState<DispatchEntry | null>(null);
